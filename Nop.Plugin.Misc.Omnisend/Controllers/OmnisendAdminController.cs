@@ -123,7 +123,8 @@ namespace Nop.Plugin.Misc.Omnisend.Controllers
                 }
             }
 
-            _omnisendSettings.UseTracking = model.UseTracking;
+            //_omnisendSettings.UseTracking = model.UseTracking;
+            _omnisendSettings.UseTracking = true;
 
             await _settingService.SaveSettingAsync(_omnisendSettings);
 

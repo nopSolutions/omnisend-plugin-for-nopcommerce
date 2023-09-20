@@ -26,7 +26,8 @@
                                 <span asp-validation-for="ApiKey"></span>
                             </div>
                         </div>
-                        <div class="form-group row">
+                        @*//recommended to not change this setting*@
+                        @*<div class="form-group row">
                             <div class="col-md-3">
                                 <nop-label asp-for="UseTracking"/>
                             </div>
@@ -34,7 +35,7 @@
                                 <nop-editor asp-for="UseTracking"/>
                                 <span asp-validation-for="UseTracking"></span>
                             </div>
-                        </div>
+                        </div>*@
                         <div class="form-group row">
                             <button type="submit" name="save" class="btn btn-primary">
                                 @T("Admin.Common.Save")
