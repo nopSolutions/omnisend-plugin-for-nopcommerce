@@ -20,7 +20,6 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         IConsumer<EmailUnsubscribedEvent>,
         IConsumer<EntityDeletedEvent<ProductAttributeCombination>>,
         IConsumer<EntityDeletedEvent<ShoppingCartItem>>,
-        IConsumer<EntityInsertedEvent<Product>>,
         IConsumer<EntityUpdatedEvent<Product>>,
         IConsumer<EntityInsertedEvent<ProductAttributeCombination>>,
         IConsumer<EntityInsertedEvent<ShoppingCartItem>>,
@@ -117,16 +116,6 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
             var history = eventMessage.Entity;
 
             await _omnisendService.UpdateProductAsync(history.ProductId);
-        }
-
-        /// <summary>
-        /// Handle event
-        /// </summary>
-        /// <param name="eventMessage">Event</param>
-        /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityInsertedEvent<Product> eventMessage)
-        {
-            await _omnisendService.AddNewProductAsync(eventMessage.Entity);
         }
 
         /// <summary>
@@ -271,7 +260,7 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// <returns>A task that represents the asynchronous operation</returns>
         public async Task HandleEventAsync(EntityUpdatedEvent<Product> eventMessage)
         {
-            await _omnisendService.UpdateProductAsync(eventMessage.Entity);
+            await _omnisendService.CreateOrUpdateProductAsync(eventMessage.Entity);
         }
 
         #endregion

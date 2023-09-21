@@ -798,17 +798,23 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         {
             var product = await _productService.GetProductByIdAsync(productId);
 
-            await UpdateProductAsync(product);
+            await CreateOrUpdateProductAsync(product);
         }
 
         /// <summary>
         /// Updates the product
         /// </summary>
         /// <param name="product">Product to update</param>
-        public async Task UpdateProductAsync(Product product)
+        public async Task CreateOrUpdateProductAsync(Product product)
         {
-            var data = JsonConvert.SerializeObject(await ProductToDtoAsync(product));
-            await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.ProductsApiUrl}/{product.Id}", data, HttpMethod.Put);
+            var result = await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.ProductsApiUrl}/{product.Id}", httpMethod: HttpMethod.Get);
+            if (string.IsNullOrEmpty(result))
+                await AddNewProductAsync(product);
+            else
+            {
+                var data = JsonConvert.SerializeObject(await ProductToDtoAsync(product));
+                await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.ProductsApiUrl}/{product.Id}", data, HttpMethod.Put);
+            }
         }
 
         #endregion
