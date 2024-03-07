@@ -145,7 +145,12 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// <returns>A task that represents the asynchronous operation</returns>
         public async Task HandleEventAsync(EntityInsertedEvent<ShoppingCartItem> eventMessage)
         {
-            await _omnisendEventsService.SendAddedProductToCartEventAsync(eventMessage.Entity);
+            var entity = eventMessage.Entity;
+
+            if (entity.ShoppingCartType != ShoppingCartType.ShoppingCart)
+                return;
+
+            await _omnisendEventsService.SendAddedProductToCartEventAsync(entity);
             //await _omnisendService.AddShoppingCartItemAsync(eventMessage.Entity);
         }
 
