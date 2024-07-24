@@ -9,7 +9,7 @@ namespace Nop.Plugin.Misc.Omnisend.DTO
         public CreateContactRequest(NewsLetterSubscription subscription, string inactiveStatus,
             bool sendWelcomeMessage)
         {
-            Identifiers = new List<Identifier> { new(subscription, inactiveStatus, sendWelcomeMessage) { Type = "email" } };
+            Identifiers = new List<Identifier> { new Identifier(subscription, inactiveStatus, sendWelcomeMessage) { Type = "email" } };
             SendWelcomeEmail = sendWelcomeMessage;
         }
 

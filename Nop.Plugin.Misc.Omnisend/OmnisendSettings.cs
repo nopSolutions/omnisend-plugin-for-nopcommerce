@@ -53,7 +53,7 @@ namespace Nop.Plugin.Misc.Omnisend
         /// <summary>
         /// Gets or sets the batches Ids
         /// </summary>
-        public List<string> BatchesIds { get; set; } = new();
+        public List<string> BatchesIds { get; set; } = new List<string>();
 
         /// <summary>
         /// Gets or sets the product script

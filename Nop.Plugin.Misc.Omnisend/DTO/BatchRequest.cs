@@ -7,6 +7,6 @@ namespace Nop.Plugin.Misc.Omnisend.DTO
     {
         [JsonProperty("method")] public string Method { get; } = "POST";
         [JsonProperty("endpoint")] public string Endpoint { get; set; }
-        [JsonProperty("items")] public List<IBatchSupport> Items { get; set; } = new();
+        [JsonProperty("items")] public List<IBatchSupport> Items { get; set; } = new List<IBatchSupport>();
     }
 }

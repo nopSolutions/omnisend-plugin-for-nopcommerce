@@ -1,5 +1,4 @@
-﻿using System.Threading.Tasks;
-using Nop.Core.Domain.Catalog;
+﻿using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Messages;
 using Nop.Core.Domain.Orders;
@@ -30,7 +29,8 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         IConsumer<OrderPaidEvent>,
         IConsumer<OrderPlacedEvent>,
         IConsumer<OrderRefundedEvent>,
-        IConsumer<OrderStatusChangedEvent>,
+        IConsumer<OrderCancelledEvent>,
+        IConsumer<EntityUpdatedEvent<Order>>,
         IConsumer<OrderVoidedEvent>,
         IConsumer<PageRenderingEvent>
     {
@@ -64,15 +64,14 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// Handle event
         /// </summary>
         /// <param name="eventMessage">Event</param>
-        /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(CustomerLoggedinEvent eventMessage)
+        public void HandleEvent(CustomerLoggedinEvent eventMessage)
         {
             if (string.IsNullOrEmpty(_settings.IdentifyContactScript))
                 return;
 
             var script = _settings.IdentifyContactScript.Replace(OmnisendDefaults.Email, eventMessage.Customer.Email);
 
-            await _genericAttributeService.SaveAttributeAsync(eventMessage.Customer,
+            _genericAttributeService.SaveAttribute(eventMessage.Customer,
                 OmnisendDefaults.IdentifyContactAttribute, script);
         }
 
@@ -80,10 +79,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// Handle event
         /// </summary>
         /// <param name="eventMessage">Event</param>
-        /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(CustomerRegisteredEvent eventMessage)
+        public void HandleEvent(CustomerRegisteredEvent eventMessage)
         {
-            await _omnisendService.UpdateContactAsync(eventMessage.Customer);
+            _omnisendService.UpdateContact(eventMessage.Customer);
         }
 
         /// <summary>
@@ -91,9 +89,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EmailSubscribedEvent eventMessage)
+        public void HandleEvent(EmailSubscribedEvent eventMessage)
         {
-            await _omnisendService.UpdateOrCreateContactAsync(eventMessage.Subscription, true);
+            _omnisendService.UpdateOrCreateContact(eventMessage.Subscription, true);
         }
 
         /// <summary>
@@ -101,9 +99,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EmailUnsubscribedEvent eventMessage)
+        public void HandleEvent(EmailUnsubscribedEvent eventMessage)
         {
-            await _omnisendService.UpdateOrCreateContactAsync(eventMessage.Subscription);
+            _omnisendService.UpdateOrCreateContact(eventMessage.Subscription);
         }
 
         /// <summary>
@@ -111,11 +109,11 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityInsertedEvent<StockQuantityHistory> eventMessage)
+        public void HandleEvent(EntityInsertedEvent<StockQuantityHistory> eventMessage)
         {
             var history = eventMessage.Entity;
 
-            await _omnisendService.UpdateProductAsync(history.ProductId);
+            _omnisendService.UpdateProduct(history.ProductId);
         }
 
         /// <summary>
@@ -123,9 +121,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityInsertedEvent<ProductAttributeCombination> eventMessage)
+        public void HandleEvent(EntityInsertedEvent<ProductAttributeCombination> eventMessage)
         {
-            await _omnisendService.UpdateProductAsync(eventMessage.Entity.ProductId);
+            _omnisendService.UpdateProduct(eventMessage.Entity.ProductId);
         }
 
         /// <summary>
@@ -133,9 +131,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityDeletedEvent<ProductAttributeCombination> eventMessage)
+        public void HandleEvent(EntityDeletedEvent<ProductAttributeCombination> eventMessage)
         {
-            await _omnisendService.UpdateProductAsync(eventMessage.Entity.ProductId);
+            _omnisendService.UpdateProduct(eventMessage.Entity.ProductId);
         }
 
         /// <summary>
@@ -143,14 +141,14 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityInsertedEvent<ShoppingCartItem> eventMessage)
+        public void HandleEvent(EntityInsertedEvent<ShoppingCartItem> eventMessage)
         {
             var entity = eventMessage.Entity;
 
             if (entity.ShoppingCartType != ShoppingCartType.ShoppingCart)
                 return;
 
-            await _omnisendEventsService.SendAddedProductToCartEventAsync(entity);
+            _omnisendEventsService.SendAddedProductToCartEvent(entity);
             //await _omnisendService.AddShoppingCartItemAsync(eventMessage.Entity);
         }
 
@@ -159,10 +157,10 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(OrderPlacedEvent eventMessage)
+        public void HandleEvent(OrderPlacedEvent eventMessage)
         {
-            await _omnisendEventsService.SendOrderPlacedEventAsync(eventMessage.Order);
-            await _omnisendService.PlaceOrderAsync(eventMessage.Order);
+            _omnisendEventsService.SendOrderPlacedEvent(eventMessage.Order);
+            _omnisendService.PlaceOrder(eventMessage.Order);
         }
 
         /// <summary>
@@ -170,9 +168,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(OrderPaidEvent eventMessage)
+        public void HandleEvent(OrderPaidEvent eventMessage)
         {
-            await _omnisendEventsService.SendOrderPaidEventAsync(eventMessage);
+            _omnisendEventsService.SendOrderPaidEvent(eventMessage);
             //await _omnisendService.UpdateOrderAsync(eventMessage.Order);
         }
 
@@ -181,9 +179,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(OrderRefundedEvent eventMessage)
+        public void HandleEvent(OrderRefundedEvent eventMessage)
         {
-            await _omnisendEventsService.SendOrderRefundedEventAsync(eventMessage);
+            _omnisendEventsService.SendOrderRefundedEvent(eventMessage);
             //await _omnisendService.UpdateOrderAsync(eventMessage.Order);
         }
 
@@ -192,9 +190,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(OrderStatusChangedEvent eventMessage)
+        public void HandleEvent(EntityUpdatedEvent<Order> eventMessage)
         {
-            await _omnisendEventsService.SendOrderStatusChangedEventAsync(eventMessage);
+            _omnisendEventsService.SendOrderStatusChangedEvent(eventMessage.Entity);
             //await _omnisendService.UpdateOrderAsync(eventMessage.Order);
         }
 
@@ -203,9 +201,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(PageRenderingEvent eventMessage)
+        public void HandleEvent(PageRenderingEvent eventMessage)
         {
-            await _omnisendEventsService.SendStartedCheckoutEventAsync(eventMessage);
+            _omnisendEventsService.SendStartedCheckoutEvent(eventMessage);
         }
 
         /// <summary>
@@ -213,7 +211,7 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityUpdatedEvent<ShoppingCartItem> eventMessage)
+        public void HandleEvent(EntityUpdatedEvent<ShoppingCartItem> eventMessage)
         {
             //await _omnisendService.EditShoppingCartItemAsync(eventMessage.Entity);
         }
@@ -223,9 +221,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityDeletedEvent<ShoppingCartItem> eventMessage)
+        public void HandleEvent(EntityDeletedEvent<ShoppingCartItem> eventMessage)
         {
-            await _omnisendService.DeleteShoppingCartItemAsync(eventMessage.Entity);
+            _omnisendService.DeleteShoppingCartItem(eventMessage.Entity);
         }
 
         /// <summary>
@@ -233,7 +231,7 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(OrderAuthorizedEvent eventMessage)
+        public void HandleEvent(OrderAuthorizedEvent eventMessage)
         {
             //await _omnisendService.UpdateOrderAsync(eventMessage.Order);
         }
@@ -243,7 +241,7 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(OrderVoidedEvent eventMessage)
+        public void HandleEvent(OrderVoidedEvent eventMessage)
         {
             //await _omnisendService.UpdateOrderAsync(eventMessage.Order);
         }
@@ -253,9 +251,9 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityInsertedEvent<OrderItem> eventMessage)
+        public void HandleEvent(EntityInsertedEvent<OrderItem> eventMessage)
         {
-            await _omnisendService.OrderItemAddedAsync(eventMessage.Entity);
+            _omnisendService.OrderItemAdded(eventMessage.Entity);
         }
 
         /// <summary>
@@ -263,9 +261,18 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(EntityUpdatedEvent<Product> eventMessage)
+        public void HandleEvent(EntityUpdatedEvent<Product> eventMessage)
         {
-            await _omnisendService.CreateOrUpdateProductAsync(eventMessage.Entity);
+            _omnisendService.CreateOrUpdateProduct(eventMessage.Entity);
+        }
+
+        /// <summary>
+        /// Handle event
+        /// </summary>
+        /// <param name="eventMessage">Event</param>
+        public void HandleEvent(OrderCancelledEvent eventMessage)
+        {
+            _omnisendEventsService.SendOrderStatusChangedEvent(eventMessage.Order);
         }
 
         #endregion

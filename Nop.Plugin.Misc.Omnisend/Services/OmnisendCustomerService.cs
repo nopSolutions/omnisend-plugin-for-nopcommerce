@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Linq;
 using System.Net.Http;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Routing;
@@ -55,13 +54,13 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Gets the cart identifier for customer
         /// </summary>
         /// <param name="customer">Customer</param>
-        public async Task<string> GetCartIdAsync(Customer customer)
+        public string GetCartId(Customer customer)
         {
-            var cartId = await _genericAttributeService.GetAttributeAsync<string>(customer,
+            var cartId = _genericAttributeService.GetAttribute<string>(customer,
                 OmnisendDefaults.StoredCustomerShoppingCartIdAttribute);
 
             cartId = string.IsNullOrEmpty(cartId)
-                ? await _genericAttributeService.GetAttributeAsync<string>(customer,
+                ? _genericAttributeService.GetAttribute<string>(customer,
                     OmnisendDefaults.CurrentCustomerShoppingCartIdAttribute)
                 : cartId;
 
@@ -70,7 +69,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
             cartId = Guid.NewGuid().ToString();
 
-            await _genericAttributeService.SaveAttributeAsync(customer,
+            _genericAttributeService.SaveAttribute(customer,
                 OmnisendDefaults.CurrentCustomerShoppingCartIdAttribute, cartId);
 
             return cartId;
@@ -81,16 +80,16 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// </summary>
         /// <param name="customer">Customer</param>
         /// <param name="billingAddressId">billing address identifier</param>
-        public async Task<string> GetEmailAsync(Customer customer, int? billingAddressId = null)
+        public string GetEmail(Customer customer, int? billingAddressId = null)
         {
             var email = !string.IsNullOrEmpty(customer.Email)
                 ? customer.Email
-                : await _genericAttributeService.GetAttributeAsync<string>(customer,
+                : _genericAttributeService.GetAttribute<string>(customer,
                     OmnisendDefaults.CustomerEmailAttribute);
 
             return !string.IsNullOrEmpty(email)
                 ? email
-                : (await _addressService.GetAddressByIdAsync((billingAddressId ?? customer.BillingAddressId) ?? 0))
+                : (_addressService.GetAddressById((billingAddressId ?? customer.BillingAddressId) ?? 0))
                 ?.Email;
         }
 
@@ -100,12 +99,11 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// <param name="customer">Customer</param>
         /// <param name="properties">Event properties</param>
         /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains customer event or null if customer email is not determinate
+        /// Customer event or null if customer email is not determinate
         /// </returns>
-        public async Task<CustomerEvents> CreateCustomerEventAsync(Customer customer, IEventProperty properties)
+        public CustomerEvents CreateCustomerEvent(Customer customer, IEventProperty properties)
         {
-            var email = await GetEmailAsync(customer);
+            var email = GetEmail(customer);
 
             if (string.IsNullOrEmpty(email))
                 return null;
@@ -119,11 +117,11 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Gets the contact identifier
         /// </summary>
         /// <param name="email">Email to determinate customer</param>
-        public async Task<string> GetContactIdAsync(string email)
+        public string GetContactId(string email)
         {
             var url = $"{OmnisendDefaults.ContactsApiUrl}?email={email}&limit=1";
 
-            var res = await _httpClient.PerformRequestAsync(url, httpMethod: HttpMethod.Get);
+            var res = _httpClient.PerformRequest(url, httpMethod: HttpMethod.Get);
 
             if (string.IsNullOrEmpty(res))
                 return null;
@@ -139,23 +137,23 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Store the cart identifier
         /// </summary>
         /// <param name="customer">Customer</param>
-        public async Task StoreCartIdAsync(Customer customer)
+        public void StoreCartId(Customer customer)
         {
-            var cartId = await _genericAttributeService.GetAttributeAsync<string>(customer,
+            var cartId = _genericAttributeService.GetAttribute<string>(customer,
                 OmnisendDefaults.StoredCustomerShoppingCartIdAttribute);
 
             if (string.IsNullOrEmpty(cartId))
-                await _genericAttributeService.SaveAttributeAsync(customer,
-                    OmnisendDefaults.StoredCustomerShoppingCartIdAttribute, await GetCartIdAsync(customer));
+                _genericAttributeService.SaveAttribute(customer,
+                    OmnisendDefaults.StoredCustomerShoppingCartIdAttribute, GetCartId(customer));
         }
 
         /// <summary>
         /// Delete the current shopping cart identifier for customer
         /// </summary>
         /// <param name="customer">Customer</param>
-        public async Task DeleteCurrentCustomerShoppingCartIdAsync(Customer customer)
+        public void DeleteCurrentCustomerShoppingCartId(Customer customer)
         {
-            await _genericAttributeService.SaveAttributeAsync<string>(customer,
+            _genericAttributeService.SaveAttribute<string>(customer,
                 OmnisendDefaults.CurrentCustomerShoppingCartIdAttribute, null);
         }
 
@@ -164,11 +162,10 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// </summary>
         /// <param name="customer">Customer</param>
         /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the True if we need to sand delete events</returns>
-        public async Task<bool> IsNeedToSendDeleteShoppingCartEventAsync(Customer customer)
+        /// The True if we need to sand delete events</returns>
+        public bool IsNeedToSendDeleteShoppingCartEvent(Customer customer)
         {
-            return string.IsNullOrEmpty(await _genericAttributeService.GetAttributeAsync<string>(customer,
+            return string.IsNullOrEmpty(_genericAttributeService.GetAttribute<string>(customer,
                 OmnisendDefaults.StoredCustomerShoppingCartIdAttribute));
         }
 
@@ -176,9 +173,9 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Delete the stored shopping cart identifier for customer
         /// </summary>
         /// <param name="customer">Customer</param>
-        public async Task DeleteStoredCustomerShoppingCartIdAsync(Customer customer)
+        public void DeleteStoredCustomerShoppingCartId(Customer customer)
         {
-            await _genericAttributeService.SaveAttributeAsync<string>(customer,
+            _genericAttributeService.SaveAttribute<string>(customer,
                 OmnisendDefaults.StoredCustomerShoppingCartIdAttribute, null);
         }
 
@@ -193,7 +190,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 return null;
 
             return _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext)
-                .RouteUrl(OmnisendDefaults.AbandonedCheckoutRouteName, new { cartId }, _webHelper.GetCurrentRequestProtocol());
+                .RouteUrl(OmnisendDefaults.AbandonedCheckoutRouteName, new { cartId }, _webHelper.CurrentRequestProtocol);
         }
 
         #endregion

@@ -16,7 +16,7 @@ namespace Nop.Plugin.Misc.Omnisend.Validators
         {
             RuleFor(model => model.ApiKey)
                 .NotEmpty()
-                .WithMessageAwait(localizationService.GetResourceAsync("Plugins.Misc.Omnisend.Fields.ApiKey.Required"));
+                .WithMessage(localizationService.GetResource("Plugins.Misc.Omnisend.Fields.ApiKey.Required"));
         }
 
         #endregion

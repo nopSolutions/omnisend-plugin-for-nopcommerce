@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Routing;
@@ -10,10 +9,8 @@ using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
-using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
-using Nop.Core.Domain.Shipping;
 using Nop.Plugin.Misc.Omnisend.DTO;
 using Nop.Plugin.Misc.Omnisend.DTO.Events;
 using Nop.Services.Catalog;
@@ -26,7 +23,6 @@ using Nop.Services.Media;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Shipping;
-using Nop.Services.Shipping.Tracking;
 using Nop.Services.Tax;
 using Nop.Web.Framework.Events;
 
@@ -45,6 +41,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         private readonly ICountryService _countryService;
         private readonly ICustomerService _customerService;
         private readonly IDiscountService _discountService;
+        private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILocalizationService _localizationService;
         private readonly IManufacturerService _manufacturerService;
         private readonly IMeasureService _measureService;
@@ -76,6 +73,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             ICountryService countryService,
             ICustomerService customerService,
             IDiscountService discountService,
+            IGenericAttributeService genericAttributeService,
             ILocalizationService localizationService,
             IManufacturerService manufacturerService,
             IMeasureService measureService,
@@ -104,6 +102,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             _customerService = customerService;
             _discountService = discountService;
             _localizationService = localizationService;
+            _genericAttributeService = genericAttributeService;
             _manufacturerService = manufacturerService;
             _measureService = measureService;
             _orderService = orderService;
@@ -129,190 +128,189 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
         #region Utilities
 
-        private async Task SendEventAsync(CustomerEvents customerEvent)
+        private void SendEvent(CustomerEvents customerEvent)
         {
             if (customerEvent == null)
                 return;
 
             var data = JsonConvert.SerializeObject(customerEvent);
-            await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.CustomerEventsApiUrl, data, HttpMethod.Post);
+            _omnisendHttpClient.PerformRequest(OmnisendDefaults.CustomerEventsApiUrl, data, HttpMethod.Post);
         }
 
-        private async Task<CustomerEvents> CreateAddedProductToCartEventAsync(ShoppingCartItem shoppingCartItem)
+        private CustomerEvents CreateAddedProductToCartEvent(ShoppingCartItem shoppingCartItem)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(shoppingCartItem.CustomerId);
+            var customer = _customerService.GetCustomerById(shoppingCartItem.CustomerId);
 
-            var customerEvent = await _omnisendCustomerService.CreateCustomerEventAsync(customer,
-                await PrepareAddedProductToCartPropertyAsync(shoppingCartItem));
+            var customerEvent = _omnisendCustomerService.CreateCustomerEvent(customer,
+                PrepareAddedProductToCartProperty(shoppingCartItem));
 
             return customerEvent;
         }
 
-        private async Task<CustomerEvents> CreateStartedCheckoutEventAsync()
+        private CustomerEvents CreateStartedCheckoutEvent()
         {
-            var customer = await _workContext.GetCurrentCustomerAsync();
+            var customer = _workContext.CurrentCustomer;
             var customerEvent =
-                await _omnisendCustomerService.CreateCustomerEventAsync(customer,
-                    await PrepareStartedCheckoutPropertyAsync(customer));
+                _omnisendCustomerService.CreateCustomerEvent(customer,
+                    PrepareStartedCheckoutProperty(customer));
 
             return customerEvent;
         }
 
-        private async Task<CustomerEvents> CreateOrderPlacedEventAsync(Order order)
+        private CustomerEvents CreateOrderPlacedEvent(Order order)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
-
-            var customerEvent =
-                await _omnisendCustomerService.CreateCustomerEventAsync(customer,
-                    await PreparePlacedOrderPropertyAsync(order));
-
-            return customerEvent;
-        }
-
-        private async Task<CustomerEvents> CreateOrderPaidEventAsync(Order order)
-        {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+            var customer = _customerService.GetCustomerById(order.CustomerId);
 
             var customerEvent =
-                await _omnisendCustomerService.CreateCustomerEventAsync(customer,
-                    await PreparePlacedPaidPropertyAsync(order));
+                _omnisendCustomerService.CreateCustomerEvent(customer,
+                    PreparePlacedOrderProperty(order));
 
             return customerEvent;
         }
 
-        private async Task<CustomerEvents> CreateOrderCanceledEventAsync(Order order)
+        private CustomerEvents CreateOrderPaidEvent(Order order)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+            var customer = _customerService.GetCustomerById(order.CustomerId);
 
             var customerEvent =
-                await _omnisendCustomerService.CreateCustomerEventAsync(customer,
-                    await PrepareOrderCanceledPropertyAsync(order));
+                _omnisendCustomerService.CreateCustomerEvent(customer,
+                    PreparePlacedPaidProperty(order));
 
             return customerEvent;
         }
 
-        private async Task<CustomerEvents> CreateOrderFulfilledEventAsync(Order order)
+        private CustomerEvents CreateOrderCanceledEvent(Order order)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+            var customer = _customerService.GetCustomerById(order.CustomerId);
 
             var customerEvent =
-                await _omnisendCustomerService.CreateCustomerEventAsync(customer,
-                    await PrepareOrderFulfilledPropertyAsync(order));
+                _omnisendCustomerService.CreateCustomerEvent(customer,
+                    PrepareOrderCanceledProperty(order));
 
             return customerEvent;
         }
 
-        private async Task<CustomerEvents> CreateOrderRefundedEventAsync(Order order)
+        private CustomerEvents CreateOrderFulfilledEvent(Order order)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+            var customer = _customerService.GetCustomerById(order.CustomerId);
 
             var customerEvent =
-                await _omnisendCustomerService.CreateCustomerEventAsync(customer,
-                    await PrepareOrderRefundedPropertyAsync(order));
+                _omnisendCustomerService.CreateCustomerEvent(customer,
+                    PrepareOrderFulfilledProperty(order));
 
             return customerEvent;
         }
 
-        private async Task<AddedProductToCartProperty> PrepareAddedProductToCartPropertyAsync(
+        private CustomerEvents CreateOrderRefundedEvent(Order order)
+        {
+            var customer = _customerService.GetCustomerById(order.CustomerId);
+
+            var customerEvent =
+                _omnisendCustomerService.CreateCustomerEvent(customer,
+                    PrepareOrderRefundedProperty(order));
+
+            return customerEvent;
+        }
+
+        private AddedProductToCartProperty PrepareAddedProductToCartProperty(
             ShoppingCartItem shoppingCartItem)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(shoppingCartItem.CustomerId);
-            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart,
+            var customer = _customerService.GetCustomerById(shoppingCartItem.CustomerId);
+            var cart = _shoppingCartService.GetShoppingCart(customer, ShoppingCartType.ShoppingCart,
                 shoppingCartItem.StoreId);
 
-            var cartId = await _omnisendCustomerService.GetCartIdAsync(customer);
+            var cartId = _omnisendCustomerService.GetCartId(customer);
 
             var property = new AddedProductToCartProperty
             {
                 AbandonedCheckoutURL = _omnisendCustomerService.GetAbandonedCheckoutUrl(cartId),
                 CartId = cartId,
-                Currency = await _omnisendHelper.GetPrimaryStoreCurrencyCodeAsync(),
+                Currency = _omnisendHelper.GetPrimaryStoreCurrencyCode(),
                 LineItems =
-                    await cart.SelectAwait(async sci => await ShoppingCartItemToProductItemAsync(sci))
-                        .ToListAsync(),
-                Value = (await GetShoppingCartItemPriceAsync(shoppingCartItem)).price,
-                AddedItem = await ShoppingCartItemToProductItemAsync(shoppingCartItem)
+                    cart.Select(ShoppingCartItemToProductItem)
+                        .ToList(),
+                Value = GetShoppingCartItemPrice(shoppingCartItem).price,
+                AddedItem = ShoppingCartItemToProductItem(shoppingCartItem)
             };
 
             return property;
         }
 
-        private async Task<StartedCheckoutProperty> PrepareStartedCheckoutPropertyAsync(Customer customer)
+        private StartedCheckoutProperty PrepareStartedCheckoutProperty(Customer customer)
         {
-            var store = await _storeContext.GetCurrentStoreAsync();
-            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var store = _storeContext.CurrentStore;
+            var cart = _shoppingCartService.GetShoppingCart(customer, ShoppingCartType.ShoppingCart, store.Id);
 
-            var cartSum = (await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart)).shoppingCartTotal ?? 0;
-            var cartId = await _omnisendCustomerService.GetCartIdAsync(customer);
+            var cartSum = _orderTotalCalculationService.GetShoppingCartTotal(cart) ?? 0;
+            var cartId = _omnisendCustomerService.GetCartId(customer);
 
             var property = new StartedCheckoutProperty
             {
                 AbandonedCheckoutURL = _omnisendCustomerService.GetAbandonedCheckoutUrl(cartId),
                 CartId = cartId,
-                Currency = await _omnisendHelper.GetPrimaryStoreCurrencyCodeAsync(),
-                LineItems = await cart.SelectAwait(async sci => await ShoppingCartItemToProductItemAsync(sci))
-                    .ToListAsync(),
+                Currency = _omnisendHelper.GetPrimaryStoreCurrencyCode(),
+                LineItems = cart.Select(ShoppingCartItemToProductItem)
+                    .ToList(),
                 Value = (float)cartSum
             };
 
             return property;
         }
 
-        private async Task<PlacedOrderProperty> PreparePlacedOrderPropertyAsync(Order order)
+        private PlacedOrderProperty PreparePlacedOrderProperty(Order order)
         {
             var property = new PlacedOrderProperty();
-            await FillOrderEventBaseAsync(property, order);
+            FillOrderEventBase(property, order);
 
             return property;
         }
 
-        private async Task<PaidForOrderProperty> PreparePlacedPaidPropertyAsync(Order order)
+        private PaidForOrderProperty PreparePlacedPaidProperty(Order order)
         {
             var property = new PaidForOrderProperty();
-            await FillOrderEventBaseAsync(property, order);
+            FillOrderEventBase(property, order);
 
             return property;
         }
 
-        private async Task<OrderCanceledProperty> PrepareOrderCanceledPropertyAsync(Order order)
+        private OrderCanceledProperty PrepareOrderCanceledProperty(Order order)
         {
             var property = new OrderCanceledProperty();
-            await FillOrderEventBaseAsync(property, order);
+            FillOrderEventBase(property, order);
             property.CancelReason = null;
 
             return property;
         }
 
-        private async Task<OrderFulfilledProperty> PrepareOrderFulfilledPropertyAsync(Order order)
+        private OrderFulfilledProperty PrepareOrderFulfilledProperty(Order order)
         {
             var property = new OrderFulfilledProperty();
-            await FillOrderEventBaseAsync(property, order);
+            FillOrderEventBase(property, order);
 
             return property;
         }
 
-        private async Task<OrderRefundedProperty> PrepareOrderRefundedPropertyAsync(Order order)
+        private OrderRefundedProperty PrepareOrderRefundedProperty(Order order)
         {
             var property = new OrderRefundedProperty();
-            await FillOrderEventBaseAsync(property, order);
+            FillOrderEventBase(property, order);
             property.TotalRefundedAmount = (float)order.RefundedAmount;
 
             return property;
         }
 
-        private async Task<ProductItem> ShoppingCartItemToProductItemAsync(ShoppingCartItem shoppingCartItem)
+        private ProductItem ShoppingCartItemToProductItem(ShoppingCartItem shoppingCartItem)
         {
-            var product = await _productService.GetProductByIdAsync(shoppingCartItem.ProductId);
+            var product = _productService.GetProductById(shoppingCartItem.ProductId);
 
-            var (sku, variantId) =
-                await _omnisendHelper.GetSkuAndVariantIdAsync(product, shoppingCartItem.AttributesXml);
-            var (price, discount) = await GetShoppingCartItemPriceAsync(shoppingCartItem);
-            var picture = await _pictureService.GetProductPictureAsync(product, shoppingCartItem.AttributesXml);
-            var (pictureUrl, _) = await _pictureService.GetPictureUrlAsync(picture);
+            var (sku, variantId) = _omnisendHelper.GetSkuAndVariantId(product, shoppingCartItem.AttributesXml);
+            var (price, discount) = GetShoppingCartItemPrice(shoppingCartItem);
+            var picture = _pictureService.GetProductPicture(product, shoppingCartItem.AttributesXml);
+            var pictureUrl = _pictureService.GetPictureUrl(picture.Id);
 
             var productItem = new ProductItem
             {
-                ProductCategories = await GetProductCategoriesAsync(product),
+                ProductCategories = GetProductCategories(product),
                 ProductDescription = product.ShortDescription,
                 ProductDiscount = discount,
                 ProductId = product.Id,
@@ -322,7 +320,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 ProductSku = sku,
                 ProductStrikeThroughPrice = (float)product.OldPrice,
                 ProductTitle = product.Name,
-                ProductURL = await _omnisendHelper.GetProductUrlAsync(product),
+                ProductURL = _omnisendHelper.GetProductUrl(product),
                 ProductVariantId = variantId,
                 ProductVariantImageURL = pictureUrl
             };
@@ -330,23 +328,23 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             return productItem;
         }
 
-        private async Task FillOrderEventBaseAsync(OrderEventBaseProperty property, Order order)
+        private void FillOrderEventBase(OrderEventBaseProperty property, Order order)
         {
             var urlHelper = _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext);
 
-            var items = await _orderService.GetOrderItemsAsync(order.Id);
-            var appliedDiscounts = await _discountService.GetAllDiscountUsageHistoryAsync(orderId: order.Id);
+            var items = _orderService.GetOrderItems(order.Id);
+            var appliedDiscounts = _discountService.GetAllDiscountUsageHistory(orderId: order.Id);
 
-            var paymentMethodName = await _paymentPluginManager.LoadPluginBySystemNameAsync(order.PaymentMethodSystemName) is IPaymentMethod plugin
-                ? await _localizationService.GetLocalizedFriendlyNameAsync(plugin, order.CustomerLanguageId)
+            var paymentMethodName = _paymentPluginManager.LoadPluginBySystemName(order.PaymentMethodSystemName) is { } plugin
+                ? _localizationService.GetLocalizedFriendlyName(plugin, order.CustomerLanguageId)
                 : order.PaymentMethodSystemName;
 
-            property.BillingAddress = await GetAddressItemDataAsync(order.BillingAddressId);
+            property.BillingAddress = GetAddressItemData(order.BillingAddressId);
             property.CreatedAt = order.CreatedOnUtc.ToDtoString();
-            property.Currency = await _omnisendHelper.GetPrimaryStoreCurrencyCodeAsync();
-            property.Discounts = await appliedDiscounts.SelectAwait(async duh =>
+            property.Currency = _omnisendHelper.GetPrimaryStoreCurrencyCode();
+            property.Discounts = appliedDiscounts.Select(duh =>
             {
-                var discount = await _discountService.GetDiscountByIdAsync(duh.DiscountId);
+                var discount = _discountService.GetDiscountById(duh.DiscountId);
 
                 return new DiscountItem
                 {
@@ -354,17 +352,18 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                     Code = discount.CouponCode,
                     Type = discount.DiscountType.ToString()
                 };
-            }).ToListAsync();
+            }).ToList();
+
             property.FulfillmentStatus = order.OrderStatus.ToString();
             property.LineItems =
-                await items.SelectAwait(async oi => await OrderItemToProductItemAsync(oi)).ToListAsync();
+                items.Select(OrderItemToProductItem).ToList();
             property.Note = null;
             property.OrderId = order.CustomOrderNumber;
             property.OrderNumber = order.Id;
-            property.OrderStatusURL = urlHelper.RouteUrl("OrderDetails", new { orderId = order.Id }, _webHelper.GetCurrentRequestProtocol());
+            property.OrderStatusURL = urlHelper.RouteUrl("OrderDetails", new { orderId = order.Id }, _webHelper.CurrentRequestProtocol);
             property.PaymentMethod = paymentMethodName;
             property.PaymentStatus = order.PaymentStatus.ToString();
-            property.ShippingAddress = await GetAddressItemDataAsync(order.ShippingAddressId);
+            property.ShippingAddress = GetAddressItemData(order.ShippingAddressId);
             property.ShippingMethod = order.ShippingMethod;
             property.ShippingPrice = (float)order.OrderShippingInclTax;
             property.SubTotalPrice = (float)order.OrderSubtotalInclTax;
@@ -374,32 +373,30 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             property.TotalPrice = (float)order.OrderTotal;
             property.TotalTax = (float)order.OrderTax;
 
-            if ((await _shipmentService.GetShipmentsByOrderIdAsync(order.Id)).LastOrDefault() is Shipment shipment &&
-                await _shipmentService.GetShipmentTrackerAsync(shipment) is IShipmentTracker shipmentTracker)
-            {
+            if (_shipmentService.GetShipmentsByOrderId(order.Id).LastOrDefault() is { } shipment &&
+                _shipmentService.GetShipmentTracker(shipment) is { } shipmentTracker)
                 property.Tracking = new TrackingItem
                 {
                     Code = shipment.TrackingNumber,
-                    CourierURL = await shipmentTracker.GetUrlAsync(shipment.TrackingNumber, shipment)
+                    CourierURL = shipmentTracker.GetUrl(shipment.TrackingNumber)
                 };
-            }
         }
 
-        private async Task<OrderProductItem> OrderItemToProductItemAsync(OrderItem orderItem)
+        private OrderProductItem OrderItemToProductItem(OrderItem orderItem)
         {
-            var product = await _productService.GetProductByIdAsync(orderItem.ProductId);
+            var product = _productService.GetProductById(orderItem.ProductId);
 
-            var (sku, variantId) = await _omnisendHelper.GetSkuAndVariantIdAsync(product, orderItem.AttributesXml);
+            var (sku, variantId) = _omnisendHelper.GetSkuAndVariantId(product, orderItem.AttributesXml);
 
-            var picture = await _pictureService.GetProductPictureAsync(product, orderItem.AttributesXml);
-            var (pictureUrl, _) = await _pictureService.GetPictureUrlAsync(picture);
+            var picture = _pictureService.GetProductPicture(product, orderItem.AttributesXml);
+            var pictureUrl = _pictureService.GetPictureUrl(picture.Id);
 
-            var productManufacturer = (await _manufacturerService.GetProductManufacturersByProductIdAsync(orderItem.ProductId)).FirstOrDefault();
-            var manufacturer = await _manufacturerService.GetManufacturerByIdAsync(productManufacturer?.ManufacturerId ?? 0);
-            var productsTags = await _productTagService.GetAllProductTagsByProductIdAsync(product.Id);
+            var productManufacturer = _manufacturerService.GetProductManufacturersByProductId(orderItem.ProductId).FirstOrDefault();
+            var manufacturer = _manufacturerService.GetManufacturerById(productManufacturer?.ManufacturerId ?? 0);
+            var productsTags = _productTagService.GetAllProductTagsByProductId(product.Id);
 
-            var weight = await _measureService.GetMeasureWeightBySystemKeywordAsync("grams") is MeasureWeight measureWeight
-                ? await _measureService.ConvertFromPrimaryMeasureWeightAsync(orderItem.ItemWeight ?? 0, measureWeight)
+            var weight = _measureService.GetMeasureWeightBySystemKeyword("grams") is { } measureWeight
+                ? _measureService.ConvertFromPrimaryMeasureWeight(orderItem.ItemWeight ?? 0, measureWeight)
                 : 0;
 
             float discount = 0;
@@ -409,7 +406,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
             var productItem = new OrderProductItem
             {
-                ProductCategories = await GetProductCategoriesAsync(product),
+                ProductCategories = GetProductCategories(product),
                 ProductDescription = product.ShortDescription,
                 ProductDiscount = discount,
                 ProductId = product.Id,
@@ -420,7 +417,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 ProductStrikeThroughPrice = (float)product.OldPrice,
                 ProductTags = productsTags.Select(tag => tag.Name).ToList(),
                 ProductTitle = product.Name,
-                ProductURL = await _omnisendHelper.GetProductUrlAsync(product),
+                ProductURL = _omnisendHelper.GetProductUrl(product),
                 ProductVariantId = variantId,
                 ProductVariantImageURL = pictureUrl,
                 ProductVendor = manufacturer?.Name,
@@ -430,15 +427,15 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             return productItem;
         }
 
-        private async Task<AddressItem> GetAddressItemDataAsync(int? addressId)
+        private AddressItem GetAddressItemData(int? addressId)
         {
-            var address = await _addressService.GetAddressByIdAsync(addressId ?? 0);
+            var address = _addressService.GetAddressById(addressId ?? 0);
 
             if (address == null)
                 return null;
 
-            var country = await _countryService.GetCountryByIdAsync(address.CountryId ?? 0);
-            var state = await _stateProvinceService.GetStateProvinceByIdAsync(address.StateProvinceId ?? 0);
+            var country = _countryService.GetCountryById(address.CountryId ?? 0);
+            var state = _stateProvinceService.GetStateProvinceById(address.StateProvinceId ?? 0);
 
             return new AddressItem
             {
@@ -457,28 +454,27 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             };
         }
 
-        private async Task<(float price, float discountAmount)> GetShoppingCartItemPriceAsync(
+        private (float price, float discountAmount) GetShoppingCartItemPrice(
             ShoppingCartItem shoppingCartItem)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(shoppingCartItem.CustomerId);
-            var product = await _productService.GetProductByIdAsync(shoppingCartItem.ProductId);
+            var customer = _customerService.GetCustomerById(shoppingCartItem.CustomerId);
+            var product = _productService.GetProductById(shoppingCartItem.ProductId);
 
-            var (scSubTotal, discountAmount, _, _) =
-                await _shoppingCartService.GetSubTotalAsync(shoppingCartItem, true);
-            var price = (float)(await _taxService.GetProductPriceAsync(product, scSubTotal, true, customer)).price;
+            var scSubTotal = _shoppingCartService.GetSubTotal(shoppingCartItem, true, out var discountAmount, out _, out  _);
+            var price = (float)_taxService.GetProductPrice(product, scSubTotal, true, customer, out _);
 
             return (price, (float)discountAmount);
         }
 
-        private async Task<List<ProductItem.ProductItemCategories>> GetProductCategoriesAsync(Product product)
+        private List<ProductItem.ProductItemCategories> GetProductCategories(Product product)
         {
-            var productCategories = await _categoryService.GetProductCategoriesByProductIdAsync(product.Id);
+            var productCategories = _categoryService.GetProductCategoriesByProductId(product.Id);
 
-            return await productCategories.SelectAwait(async pc => new ProductItem.ProductItemCategories
+            return productCategories.Select(pc => new ProductItem.ProductItemCategories
             {
                 Id = pc.Id,
-                Title = (await _categoryService.GetCategoryByIdAsync(pc.CategoryId)).Name
-            }).ToListAsync();
+                Title = _categoryService.GetCategoryById(pc.CategoryId).Name
+            }).ToList();
         }
 
         #endregion
@@ -489,69 +485,88 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Send "added product to cart" event
         /// </summary>
         /// <param name="shoppingCartItem">Shopping cart item</param>
-        public async Task SendAddedProductToCartEventAsync(ShoppingCartItem shoppingCartItem)
+        public void SendAddedProductToCartEvent(ShoppingCartItem shoppingCartItem)
         {
-            await SendEventAsync(await CreateAddedProductToCartEventAsync(shoppingCartItem));
+            SendEvent(CreateAddedProductToCartEvent(shoppingCartItem));
         }
 
         /// <summary>
         /// Send "order placed" event
         /// </summary>
         /// <param name="order">Order</param>
-        public async Task SendOrderPlacedEventAsync(Order order)
+        public void SendOrderPlacedEvent(Order order)
         {
-            await SendEventAsync(await CreateOrderPlacedEventAsync(order));
+            SendEvent(CreateOrderPlacedEvent(order));
         }
 
         /// <summary>
         /// Send "order paid" event
         /// </summary>
         /// <param name="eventMessage">Order paid event</param>
-        public async Task SendOrderPaidEventAsync(OrderPaidEvent eventMessage)
+        public void SendOrderPaidEvent(OrderPaidEvent eventMessage)
         {
-            await SendEventAsync(await CreateOrderPaidEventAsync(eventMessage.Order));
+            SendEvent(CreateOrderPaidEvent(eventMessage.Order));
         }
 
         /// <summary>
         /// Send "order refunded" event
         /// </summary>
         /// <param name="eventMessage">Order refunded event</param>
-        public async Task SendOrderRefundedEventAsync(OrderRefundedEvent eventMessage)
+        public void SendOrderRefundedEvent(OrderRefundedEvent eventMessage)
         {
             if (eventMessage.Order.PaymentStatus == PaymentStatus.Refunded)
-                await SendEventAsync(await CreateOrderRefundedEventAsync(eventMessage.Order));
+                SendEvent(CreateOrderRefundedEvent(eventMessage.Order));
         }
 
         /// <summary>
         /// Send "order canceled" or "order fulfilled" events
         /// </summary>
-        /// <param name="eventMessage">Order status changed event</param>
-        public async Task SendOrderStatusChangedEventAsync(OrderStatusChangedEvent eventMessage)
+        /// <param name="order">The order</param>
+        public void SendOrderStatusChangedEvent(Order order)
         {
-            var order = eventMessage.Order;
+            switch (order.OrderStatus)
+            {
+                case OrderStatus.Cancelled:
+                {
+                    var sent = _genericAttributeService.GetAttribute<bool>(order, OmnisendDefaults.OrderCanceledAttribute);
 
-            if (eventMessage.PreviousOrderStatus == order.OrderStatus)
-                return;
+                    if (sent)
+                        return;
 
-            if (order.OrderStatus == OrderStatus.Cancelled)
-                await SendEventAsync(await CreateOrderCanceledEventAsync(eventMessage.Order));
+                    SendEvent(CreateOrderCanceledEvent(order));
 
-            if (order.OrderStatus == OrderStatus.Complete)
-                await SendEventAsync(await CreateOrderFulfilledEventAsync(eventMessage.Order));
+                    _genericAttributeService.SaveAttribute(order, OmnisendDefaults.OrderCanceledAttribute, true);
+
+                    break;
+                }
+                case OrderStatus.Complete:
+                {
+                    var sent = _genericAttributeService.GetAttribute<bool>(order, OmnisendDefaults.OrderFulfilledAttribute);
+
+                    if (sent)
+                        return;
+
+                    SendEvent(CreateOrderFulfilledEvent(order));
+
+                    _genericAttributeService.SaveAttribute(order, OmnisendDefaults.OrderFulfilledAttribute, true);
+
+                    break;
+                }
+            }
         }
 
         /// <summary>
         /// Send "started checkout" event
         /// </summary>
         /// <param name="eventMessage">Page rendering event</param>
-        public async Task SendStartedCheckoutEventAsync(PageRenderingEvent eventMessage)
+        public void SendStartedCheckoutEvent(PageRenderingEvent eventMessage)
         {
-            var routeName = eventMessage.GetRouteName();
+            var routeName = eventMessage.GetRouteName() ?? string.Empty;
             if (!routeName.Equals("CheckoutOnePage", StringComparison.InvariantCultureIgnoreCase) &&
                 !routeName.Equals("CheckoutBillingAddress", StringComparison.InvariantCultureIgnoreCase))
                 return;
 
-            await SendEventAsync(await CreateStartedCheckoutEventAsync());
+            SendEvent(CreateStartedCheckoutEvent());
         }
 
         #endregion

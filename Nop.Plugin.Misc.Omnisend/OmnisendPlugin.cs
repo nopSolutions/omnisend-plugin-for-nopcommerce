@@ -1,13 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Nop.Core.Domain.Cms;
 using Nop.Core.Domain.Media;
-using Nop.Plugin.Misc.Omnisend.Components;
 using Nop.Services.Cms;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
@@ -64,40 +62,24 @@ namespace Nop.Plugin.Misc.Omnisend
         }
 
         /// <summary>
-        /// Gets a type of a view component for displaying widget
-        /// </summary>
-        /// <param name="widgetZone">Name of the widget zone</param>
-        /// <returns>View component type</returns>
-        public Type GetWidgetViewComponent(string widgetZone)
-        {
-            if (widgetZone is null)
-                throw new ArgumentNullException(nameof(widgetZone));
-
-            var zones = GetWidgetZonesAsync().Result;
-
-            return zones.Any(widgetZone.Equals) ? typeof(WidgetsOmnisendViewComponent) : null;
-        }
-
-        /// <summary>
         /// Gets widget zones where this widget should be rendered
         /// </summary>
         /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the widget zones
+        /// The widget zones
         /// </returns>
-        public Task<IList<string>> GetWidgetZonesAsync()
+        public IList<string> GetWidgetZones()
         {
-            return Task.FromResult<IList<string>>(new List<string> { PublicWidgetZones.BodyStartHtmlTagAfter, PublicWidgetZones.ProductDetailsBottom });
+            return new List<string> { PublicWidgetZones.BodyStartHtmlTagAfter, PublicWidgetZones.ProductDetailsBottom };
         }
 
         /// <summary>
         /// Install plugin
         /// </summary>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public override async Task InstallAsync()
+        public override void Install()
         {
             //ensure MediaSettings.UseAbsoluteImagePath is enabled (used for images uploading)
-            await _settingService.SetSettingAsync($"{nameof(MediaSettings)}.{nameof(MediaSettings.UseAbsoluteImagePath)}", true, clearCache: false);
+            _settingService.SetSetting($"{nameof(MediaSettings)}.{nameof(MediaSettings.UseAbsoluteImagePath)}", true, clearCache: false);
 
             var omnisendTrackingScript =
 @$"<!-- Omnisend starts -->
@@ -142,15 +124,15 @@ namespace Nop.Plugin.Misc.Omnisend
                 RequestTimeout = OmnisendDefaults.RequestTimeout
             };
 
-            await _settingService.SaveSettingAsync(settings);
+            _settingService.SaveSetting(settings);
 
             if (!_widgetSettings.ActiveWidgetSystemNames.Contains(OmnisendDefaults.SystemName))
             {
                 _widgetSettings.ActiveWidgetSystemNames.Add(OmnisendDefaults.SystemName);
-                await _settingService.SaveSettingAsync(_widgetSettings);
+                _settingService.SaveSetting(_widgetSettings);
             }
 
-            await _localizationService.AddOrUpdateLocaleResourceAsync(new Dictionary<string, string>
+            _localizationService.AddPluginLocaleResource(new Dictionary<string, string>
             {
                 ["Plugins.Misc.Omnisend.CantGetBrandId"] = "Failed to get the required data from the Omnisend server. Please check if the API key is correct and save the settings again. Error details can be found in the Log page",
                 ["Plugins.Misc.Omnisend.Credentials"] = "Credentials",
@@ -174,25 +156,36 @@ namespace Nop.Plugin.Misc.Omnisend
                 ["Plugins.Misc.Omnisend.Fields.UseTracking.Hint"] = "Determine whether to use tracking to get statistics with Omnisend, such as the behavior of individual subsribers on your website, including purchases made, movements on your site and subsequent segmentation.",
             });
 
-            await base.InstallAsync();
+            base.Install();
         }
 
         /// <summary>
         /// Uninstall the plugin
         /// </summary>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public override async Task UninstallAsync()
+        public override void Uninstall()
         {
             if (_widgetSettings.ActiveWidgetSystemNames.Contains(OmnisendDefaults.SystemName))
             {
                 _widgetSettings.ActiveWidgetSystemNames.Remove(OmnisendDefaults.SystemName);
-                await _settingService.SaveSettingAsync(_widgetSettings);
+                _settingService.SaveSetting(_widgetSettings);
             }
-            await _settingService.DeleteSettingAsync<OmnisendSettings>();
 
-            await _localizationService.DeleteLocaleResourcesAsync("Plugins.Misc.Omnisend");
+            _settingService.DeleteSetting<OmnisendSettings>();
 
-            await base.UninstallAsync();
+            _localizationService.DeletePluginLocaleResources("Plugins.Misc.Omnisend");
+
+            base.Uninstall();
+        }
+
+        public string GetWidgetViewComponentName(string widgetZone)
+        {
+            if (widgetZone is null)
+                throw new ArgumentNullException(nameof(widgetZone));
+
+            var zones = GetWidgetZones();
+
+            return zones.Any(widgetZone.Equals) ? OmnisendDefaults.VIEW_COMPONENT_NAME : null;
         }
 
         #endregion

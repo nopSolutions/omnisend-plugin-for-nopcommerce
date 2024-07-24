@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Plugin.Misc.Omnisend.Services;
@@ -40,17 +39,17 @@ namespace Nop.Plugin.Misc.Omnisend.Controllers
 
         #region Methods
 
-        public async Task<IActionResult> AbandonedCheckout(string cartId)
+        public IActionResult AbandonedCheckout(string cartId)
         {
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            if (await _customerService.IsGuestAsync(customer))
+            var customer = _workContext.CurrentCustomer;
+            if (_customerService.IsGuest(customer))
                 return RedirectToRoute("Login", new { ReturnUrl = _webHelper.GetRawUrl(Request) });
 
-            var customerEmail = await _genericAttributeService.GetAttributeAsync<string>(customer, OmnisendDefaults.CustomerEmailAttribute);
+            var customerEmail = _genericAttributeService.GetAttribute<string>(customer, OmnisendDefaults.CustomerEmailAttribute);
             if (!string.IsNullOrEmpty(customerEmail) && !customerEmail.Equals(customer.Email, StringComparison.InvariantCultureIgnoreCase))
                 return RedirectToRoute("Login", new { ReturnUrl = _webHelper.GetRawUrl(Request) });
 
-            await _omnisendService.RestoreShoppingCartAsync(cartId);
+            _omnisendService.RestoreShoppingCart(cartId);
 
             return RedirectToRoute("ShoppingCart");
         }

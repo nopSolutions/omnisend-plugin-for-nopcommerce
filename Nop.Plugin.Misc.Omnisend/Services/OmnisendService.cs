@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Messages;
@@ -13,6 +13,7 @@ using Nop.Core.Domain.Orders;
 using Nop.Data;
 using Nop.Plugin.Misc.Omnisend.DTO;
 using Nop.Services.Catalog;
+using Nop.Services.Common;
 using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
@@ -31,12 +32,14 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         private readonly ICategoryService _categoryService;
         private readonly ICountryService _countryService;
         private readonly ICustomerService _customerService;
+        private readonly IGenericAttributeService _genericAttributeService;
         private readonly IOrderService _orderService;
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly IProductService _productService;
         private readonly IRepository<Country> _countryRepository;
         private readonly IRepository<Customer> _customerRepository;
+        private readonly IRepository<GenericAttribute> _genericAttributeRepository;
         private readonly IRepository<NewsLetterSubscription> _newsLetterSubscriptionRepository;
         private readonly IRepository<StateProvince> _stateProvinceRepository;
         private readonly ISettingService _settingService;
@@ -58,12 +61,14 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         public OmnisendService(ICategoryService categoryService,
             ICountryService countryService,
             ICustomerService customerService,
+            IGenericAttributeService genericAttributeService,
             IOrderService orderService,
             IOrderTotalCalculationService orderTotalCalculationService,
             IProductAttributeService productAttributeService,
             IProductService productService,
             IRepository<Country> countryRepository,
             IRepository<Customer> customerRepository,
+            IRepository<GenericAttribute> genericAttributeRepository,
             IRepository<NewsLetterSubscription> newsLetterSubscriptionRepository,
             IRepository<StateProvince> stateProvinceRepository,
             ISettingService settingService,
@@ -81,12 +86,14 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             _categoryService = categoryService;
             _countryService = countryService;
             _customerService = customerService;
+            _genericAttributeService = genericAttributeService;
             _orderService = orderService;
             _orderTotalCalculationService = orderTotalCalculationService;
             _productAttributeService = productAttributeService;
             _productService = productService;
             _countryRepository = countryRepository;
             _customerRepository = customerRepository;
+            _genericAttributeRepository = genericAttributeRepository;
             _newsLetterSubscriptionRepository = newsLetterSubscriptionRepository;
             _stateProvinceRepository = stateProvinceRepository;
             _settingService = settingService;
@@ -106,15 +113,15 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
         #region Utilities
 
-        private async Task FillCustomerInfoAsync(BaseContactInfoDto dto, Customer customer)
+        private void FillCustomerInfo(BaseContactInfoDto dto, Customer customer)
         {
             if (customer == null)
                 return;
 
-            dto.FirstName = customer.FirstName;
-            dto.LastName = customer.LastName;
-
-            var country = await _countryService.GetCountryByIdAsync(customer.CountryId);
+            dto.FirstName = _genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.FirstNameAttribute);
+            dto.LastName = _genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.LastNameAttribute);
+            
+            var country = _countryService.GetCountryById(_genericAttributeService.GetAttribute<int>(customer, NopCustomerDefaults.CountryIdAttribute));
 
             if (country != null)
             {
@@ -122,23 +129,23 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 dto.CountryCode = country.TwoLetterIsoCode;
             }
 
-            var state = await _stateProvinceService.GetStateProvinceByIdAsync(customer.StateProvinceId);
+            var state = _stateProvinceService.GetStateProvinceById(_genericAttributeService.GetAttribute<int>(customer, NopCustomerDefaults.StateProvinceIdAttribute));
 
             if (state != null)
                 dto.State = state.Name;
 
-            dto.City = customer.City;
-            dto.Address = customer.StreetAddress;
-            dto.PostalCode = customer.ZipPostalCode;
-            dto.Gender = customer.Gender?.ToLower() ?? "f";
-            dto.BirthDate = customer.DateOfBirth?.ToString("yyyy-MM-dd");
+            dto.City = _genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.CityAttribute);
+            dto.Address = _genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.StreetAddressAttribute);
+            dto.PostalCode = _genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.ZipPostalCodeAttribute);
+            dto.Gender = _genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.GenderAttribute)?.ToLower() ?? "f";
+            dto.BirthDate = _genericAttributeService.GetAttribute<DateTime?>(customer, NopCustomerDefaults.DateOfBirthAttribute)?.ToString("yyyy-MM-dd");
         }
 
-        private async Task<OrderDto.OrderItemDto> OrderItemToDtoAsync(OrderItem orderItem)
+        private OrderDto.OrderItemDto OrderItemToDto(OrderItem orderItem)
         {
-            var product = await _productService.GetProductByIdAsync(orderItem.ProductId);
+            var product = _productService.GetProductById(orderItem.ProductId);
 
-            var (sku, variantId) = await _omnisendHelper.GetSkuAndVariantIdAsync(product, orderItem.AttributesXml);
+            var (sku, variantId) = _omnisendHelper.GetSkuAndVariantId(product, orderItem.AttributesXml);
 
             var dto = new OrderDto.OrderItemDto
             {
@@ -153,23 +160,23 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             return dto;
         }
 
-        private async Task<ProductDto> ProductToDtoAsync(Product product)
+        private ProductDto ProductToDto(Product product)
         {
-            async Task<List<string>> getProductCategoriesAsync()
+            List<string> getProductCategories()
             {
-                var productCategories = await _categoryService.GetProductCategoriesByProductIdAsync(product.Id);
+                var productCategories = _categoryService.GetProductCategoriesByProductId(product.Id);
 
                 return productCategories.Select(pc => pc.CategoryId.ToString()).ToList();
             }
 
-            async Task<IList<ProductAttributeCombination>> getProductCombinationsAsync()
+            IList<ProductAttributeCombination> getProductCombinations()
             {
-                return await _productAttributeService.GetAllProductAttributeCombinationsAsync(product.Id);
+                return _productAttributeService.GetAllProductAttributeCombinations(product.Id);
             }
 
-            var combinations = await getProductCombinationsAsync();
+            var combinations = getProductCombinations();
 
-            async Task<string> getProductStatusAsync(ProductAttributeCombination productAttributeCombination = null)
+            string getProductStatus(ProductAttributeCombination productAttributeCombination = null)
             {
                 var status = "notAvailable";
 
@@ -181,7 +188,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 switch (product.ManageInventoryMethod)
                 {
                     case ManageInventoryMethod.ManageStock:
-                        stockQuantity = await _productService.GetTotalStockQuantityAsync(product);
+                        stockQuantity = _productService.GetTotalStockQuantity(product);
 
                         if (stockQuantity > 0 || product.BackorderMode == BackorderMode.AllowQtyBelow0)
                             status = "inStock";
@@ -213,47 +220,47 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             {
                 ProductId = product.Id.ToString(),
                 Title = product.Name,
-                Status = await getProductStatusAsync(),
+                Status = getProductStatus(),
                 Description = product.ShortDescription,
-                Currency = await _omnisendHelper.GetPrimaryStoreCurrencyCodeAsync(),
-                ProductUrl = await _omnisendHelper.GetProductUrlAsync(product),
+                Currency = _omnisendHelper.GetPrimaryStoreCurrencyCode(),
+                ProductUrl = _omnisendHelper.GetProductUrl(product),
                 Images = new List<ProductDto.Image>
                 {
-                    await _omnisendHelper.GetProductPictureUrlAsync(product),
+                    _omnisendHelper.GetProductPictureUrl(product),
                 },
                 CreatedAt = product.CreatedOnUtc.ToDtoString(),
                 UpdatedAt = product.UpdatedOnUtc.ToDtoString(),
-                CategoryIDs = await getProductCategoriesAsync(),
+                CategoryIDs = getProductCategories(),
                 Variants = new List<ProductDto.Variant>
                 {
-                    new()
+                    new ProductDto.Variant()
                     {
                         VariantId = product.Id.ToString(),
                         Title = product.Name,
                         Sku = product.Sku,
-                        Status = await getProductStatusAsync(),
+                        Status = getProductStatus(),
                         Price = product.Price.ToCents()
                     }
                 }
             };
 
             if (combinations.Any())
-                dto.Variants.AddRange(await combinations.SelectAwait(async c => new ProductDto.Variant
+                dto.Variants.AddRange(combinations.Select(c => new ProductDto.Variant
                 {
                     VariantId = c.Id.ToString(),
                     Title = product.Name,
                     Sku = c.Sku,
-                    Status = await getProductStatusAsync(c),
+                    Status = getProductStatus(c),
                     Price = (c.OverriddenPrice ?? product.Price).ToCents()
-                }).ToListAsync());
+                }).ToList());
 
             return dto;
         }
 
-        private async Task<OrderDto> OrderToDtoAsync(Order order)
+        private OrderDto OrderToDto(Order order)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
-            var email = await _omnisendCustomerService.GetEmailAsync(customer, order.BillingAddressId);
+            var customer = _customerService.GetCustomerById(order.CustomerId);
+            var email = _omnisendCustomerService.GetEmail(customer, order.BillingAddressId);
             if (string.IsNullOrEmpty(email))
                 return null;
 
@@ -261,26 +268,26 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             {
                 OrderId = order.OrderGuid.ToString(),
                 Email = email,
-                Currency = await _omnisendHelper.GetPrimaryStoreCurrencyCodeAsync(),
+                Currency = _omnisendHelper.GetPrimaryStoreCurrencyCode(),
                 OrderSum = order.OrderTotal.ToCents(),
                 SubTotalSum = order.OrderSubtotalInclTax.ToCents(),
                 DiscountSum = order.OrderDiscount.ToCents(),
                 TaxSum = order.OrderTax.ToCents(),
                 ShippingSum = order.OrderShippingInclTax.ToCents(),
                 CreatedAt = order.CreatedOnUtc.ToDtoString(),
-                Products = await (await _orderService.GetOrderItemsAsync(order.Id)).SelectAwait(async oi => await OrderItemToDtoAsync(oi)).ToListAsync()
+                Products = _orderService.GetOrderItems(order.Id).Select(OrderItemToDto).ToList()
             };
 
             return dto;
         }
 
-        private async Task<CartItemDto> ShoppingCartItemToDtoAsync(ShoppingCartItem shoppingCartItem, Customer customer)
+        private CartItemDto ShoppingCartItemToDto(ShoppingCartItem shoppingCartItem, Customer customer)
         {
-            var product = await _productService.GetProductByIdAsync(shoppingCartItem.ProductId);
+            var product = _productService.GetProductById(shoppingCartItem.ProductId);
 
-            var (sku, variantId) = await _omnisendHelper.GetSkuAndVariantIdAsync(product, shoppingCartItem.AttributesXml);
+            var (sku, variantId) = _omnisendHelper.GetSkuAndVariantId(product, shoppingCartItem.AttributesXml);
 
-            var (scSubTotal, _, _, _) = await _shoppingCartService.GetSubTotalAsync(shoppingCartItem, true);
+            var scSubTotal = _shoppingCartService.GetSubTotal(shoppingCartItem, true);
 
             var dto = new CartItemDto
             {
@@ -290,8 +297,8 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 VariantId = variantId.ToString(),
                 Title = product.Name,
                 Quantity = shoppingCartItem.Quantity,
-                Currency = await _omnisendHelper.GetPrimaryStoreCurrencyCodeAsync(),
-                Price = (await _taxService.GetProductPriceAsync(product, scSubTotal, true, customer)).price.ToCents()
+                Currency = _omnisendHelper.GetPrimaryStoreCurrencyCode(),
+                Price = _taxService.GetProductPrice(product, scSubTotal, true, customer, out _).ToCents()
             };
 
             return dto;
@@ -307,30 +314,30 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             };
         }
 
-        private async Task<CartDto> GetCartDtoAsync(IList<ShoppingCartItem> cart)
+        private CartDto GetCartDto(IList<ShoppingCartItem> cart)
         {
             if (!cart.Any())
                 return null;
 
             var customerId = cart.First().CustomerId;
-            var customer = await _customerService.GetCustomerByIdAsync(customerId);
+            var customer = _customerService.GetCustomerById(customerId);
 
-            var items = await cart
-                .SelectAwait(async ci => await ShoppingCartItemToDtoAsync(ci, customer))
-                .ToListAsync();
+            var items = cart
+                .Select(ci => ShoppingCartItemToDto(ci, customer))
+                .ToList();
 
-            var cartSum = (await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart)).shoppingCartTotal
+            var cartSum = _orderTotalCalculationService.GetShoppingCartTotal(cart)
                 ?.ToCents() ?? 0;
 
-            var email = await _omnisendCustomerService.GetEmailAsync(customer);
+            var email = _omnisendCustomerService.GetEmail(customer);
             if (string.IsNullOrEmpty(email))
                 return null;
 
-            var cartId = await _omnisendCustomerService.GetCartIdAsync(customer);
+            var cartId = _omnisendCustomerService.GetCartId(customer);
 
             return new CartDto
             {
-                Currency = await _omnisendHelper.GetPrimaryStoreCurrencyCodeAsync(),
+                Currency = _omnisendHelper.GetPrimaryStoreCurrencyCode(),
                 Email = email,
                 CartId = cartId,
                 CartSum = cartSum,
@@ -339,40 +346,40 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             };
         }
 
-        private async Task CreateOrderAsync(Order order)
+        private void CreateOrder(Order order)
         {
-            var orderDto = await OrderToDtoAsync(order);
+            var orderDto = OrderToDto(order);
             if (orderDto is null)
                 return;
 
             var data = JsonConvert.SerializeObject(orderDto);
-            await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.OrdersApiUrl, data, HttpMethod.Post);
+            _omnisendHttpClient.PerformRequest(OmnisendDefaults.OrdersApiUrl, data, HttpMethod.Post);
         }
 
-        private async Task CreateCartAsync(IList<ShoppingCartItem> cart)
+        private void CreateCart(IList<ShoppingCartItem> cart)
         {
-            var cartDto = await GetCartDtoAsync(cart);
+            var cartDto = GetCartDto(cart);
             if (cartDto is null)
                 return;
 
             var data = JsonConvert.SerializeObject(cartDto);
-            await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.CartsApiUrl, data, HttpMethod.Post);
+            _omnisendHttpClient.PerformRequest(OmnisendDefaults.CartsApiUrl, data, HttpMethod.Post);
         }
 
-        private async Task UpdateCartAsync(Customer customer, ShoppingCartItem newItem)
+        private void UpdateCart(Customer customer, ShoppingCartItem newItem)
         {
-            var item = await ShoppingCartItemToDtoAsync(newItem, customer);
+            var item = ShoppingCartItemToDto(newItem, customer);
             if (item is null)
                 return;
 
             var data = JsonConvert.SerializeObject(item);
-            await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.CartsApiUrl}/{await _omnisendCustomerService.GetCartIdAsync(customer)}/{OmnisendDefaults.ProductsEndpoint}", data, HttpMethod.Post);
+            _omnisendHttpClient.PerformRequest($"{OmnisendDefaults.CartsApiUrl}/{_omnisendCustomerService.GetCartId(customer)}/{OmnisendDefaults.ProductsEndpoint}", data, HttpMethod.Post);
         }
 
-        private async Task<bool> CanSendRequestAsync(Customer customer)
+        private bool CanSendRequest(Customer customer)
         {
             return !string.IsNullOrEmpty(
-                await _omnisendCustomerService.GetEmailAsync(customer, customer.BillingAddressId));
+                _omnisendCustomerService.GetEmail(customer, customer.BillingAddressId));
         }
 
         /// <summary>
@@ -385,10 +392,9 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// <param name="subscriber">Newsletter subscription to filter</param>
         /// <param name="inactiveStatus">Inactive status</param>
         /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the list of subscriber data
+        /// The list of subscriber data
         /// </returns>
-        private async Task<List<IBatchSupport>> PrepareNewsletterSubscribersAsync(int storeId,
+        private List<IBatchSupport> PrepareNewsletterSubscribers(int storeId,
             int pageIndex, int pageSize,
             bool sendWelcomeMessage = false, NewsLetterSubscription subscriber = null, string inactiveStatus = "nonSubscribed")
         {
@@ -403,45 +409,51 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 join c in _customerRepository.Table on item.Email equals c.Email
                     into temp
                 from c in temp.DefaultIfEmpty()
-                where c == null || (c.Active && !c.Deleted)
+                where c == null || c.Active && !c.Deleted
                 select new { subscription = item, customer = c };
 
-            var contactsWithCountry = from item in contacts
-                join cr in _countryRepository.Table on item.customer.CountryId equals cr.Id
+            var contactsWithCountryId = from item in contacts
+                join gr in _genericAttributeRepository.Table on new {item.customer.Id, KeyGroup=nameof(Customer), Key=NopCustomerDefaults.CountryIdAttribute } equals new {Id=gr.EntityId, gr.KeyGroup, gr.Key}
+                    into temp
+                from cr in temp.DefaultIfEmpty()
+                select new { item.customer, item.subscription, countryId = int.Parse(cr.Value) };
+
+            var contactsWithCountry = from item in contactsWithCountryId
+                join cr in _countryRepository.Table on item.countryId equals cr.Id
                     into temp
                 from cr in temp.DefaultIfEmpty()
                 select new { item.customer, item.subscription, country = cr };
 
-            var contactsWithState = from item in contactsWithCountry
-                join sp in _stateProvinceRepository.Table on item.customer.StateProvinceId equals sp.Id
+            var contactsWithStateId = from item in contactsWithCountry
+                join gr in _genericAttributeRepository.Table on new { item.customer.Id, KeyGroup = nameof(Customer), Key = NopCustomerDefaults.StateProvinceIdAttribute } equals new { Id = gr.EntityId, gr.KeyGroup, gr.Key }
+                                      into temp
+                from cr in temp.DefaultIfEmpty()
+                select new { item.customer, item.subscription, item.country, stateId=int.Parse(cr.Value) };
+
+            var contactsWithState = from item in contactsWithStateId
+                join sp in _stateProvinceRepository.Table on item.stateId equals sp.Id
                     into temp
                 from sp in temp.DefaultIfEmpty()
                 select new
                 {
                     item.subscription,
-                    item.customer.FirstName,
-                    item.customer.LastName,
                     CountryName = item.country.Name,
                     CountryTwoLetterIsoCode = item.country.TwoLetterIsoCode,
                     StateProvinceName = sp.Name,
-                    item.customer.City,
-                    item.customer.StreetAddress,
-                    item.customer.ZipPostalCode,
-                    item.customer.Gender,
-                    item.customer.DateOfBirth
+                    item.customer
                 };
 
-            var subscribers = (await contactsWithState.ToListAsync()).Select(item =>
+            var subscribers = (contactsWithState.ToList()).Select(item =>
             {
                 var dto = new CreateContactRequest(item.subscription, inactiveStatus, sendWelcomeMessage)
                 {
-                    FirstName = item.FirstName,
-                    LastName = item.LastName,
-                    City = item.City,
-                    Address = item.StreetAddress,
-                    PostalCode = item.ZipPostalCode,
-                    Gender = item.Gender?.ToLower(),
-                    BirthDate = item.DateOfBirth?.ToString("yyyy-MM-dd")
+                    FirstName = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.FirstNameAttribute),
+                    LastName = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.LastNameAttribute),
+                    City = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.CityAttribute),
+                    Address = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.StreetAddressAttribute),
+                    PostalCode = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.ZipPostalCodeAttribute),
+                    Gender = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.GenderAttribute)?.ToLower(),
+                    BirthDate = _genericAttributeService.GetAttribute<DateTime?>(item.customer, NopCustomerDefaults.DateOfBirthAttribute)?.ToString("yyyy-MM-dd")
                 };
 
                 if (!string.IsNullOrEmpty(item.CountryName))
@@ -468,10 +480,10 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// <summary>
         /// Synchronize contacts
         /// </summary>
-        public async Task SyncContactsAsync()
+        public void SyncContacts()
         {
-            var store = await _storeContext.GetCurrentStoreAsync();
-            var su = await PrepareNewsletterSubscribersAsync(store.Id, 0, _omnisendSettings.PageSize);
+            var store = _storeContext.CurrentStore;
+            var su = PrepareNewsletterSubscribers(store.Id, 0, _omnisendSettings.PageSize);
 
             if (su.Count >= OmnisendDefaults.MinCountToUseBatch)
             {
@@ -485,19 +497,19 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                         Items = su
                     });
 
-                    var rez = await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
+                    var rez = _omnisendHttpClient.PerformRequest(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
 
                     var bathId = JsonConvert.DeserializeAnonymousType(rez, new { batchID = "" })?.batchID;
 
                     if (bathId != null)
                     {
                         _omnisendSettings.BatchesIds.Add(bathId);
-                        await _settingService.SaveSettingAsync(_omnisendSettings);
+                        _settingService.SaveSetting(_omnisendSettings);
                     }
 
                     page++;
 
-                    su = await PrepareNewsletterSubscribersAsync(store.Id, page, _omnisendSettings.PageSize);
+                    su = PrepareNewsletterSubscribers(store.Id, page, _omnisendSettings.PageSize);
 
                     if (!su.Any())
                         break;
@@ -505,15 +517,15 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             }
             else
                 foreach (var newsLetterSubscription in su)
-                    await UpdateOrCreateContactAsync(newsLetterSubscription as CreateContactRequest);
+                    UpdateOrCreateContact(newsLetterSubscription as CreateContactRequest);
         }
 
         /// <summary>
         /// Synchronize categories
         /// </summary>
-        public async Task SyncCategoriesAsync()
+        public void SyncCategories()
         {
-            var categories = await _categoryService.GetAllCategoriesAsync(null, pageSize: _omnisendSettings.PageSize);
+            var categories = _categoryService.GetAllCategories(null, pageSize: _omnisendSettings.PageSize);
 
             if (categories.TotalCount >= OmnisendDefaults.MinCountToUseBatch || categories.TotalCount > _omnisendSettings.PageSize)
             {
@@ -527,35 +539,35 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                         Items = categories.Select(category => CategoryToDto(category) as IBatchSupport).ToList()
                     });
 
-                    var rez = await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
+                    var rez = _omnisendHttpClient.PerformRequest(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
 
                     var bathId = JsonConvert.DeserializeAnonymousType(rez, new { batchID = "" })?.batchID;
 
                     if (bathId != null)
                     {
                         _omnisendSettings.BatchesIds.Add(bathId);
-                        await _settingService.SaveSettingAsync(_omnisendSettings);
+                        _settingService.SaveSetting(_omnisendSettings);
                     }
 
                     page++;
 
-                    categories = await _categoryService.GetAllCategoriesAsync(null, pageIndex: page, pageSize: _omnisendSettings.PageSize);
+                    categories = _categoryService.GetAllCategories(null, pageIndex: page, pageSize: _omnisendSettings.PageSize);
                 }
             }
             else
                 foreach (var category in categories)
                 {
                     var data = JsonConvert.SerializeObject(CategoryToDto(category));
-                    await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.CategoriesApiUrl, data, HttpMethod.Post);
+                    _omnisendHttpClient.PerformRequest(OmnisendDefaults.CategoriesApiUrl, data, HttpMethod.Post);
                 }
         }
 
         /// <summary>
         /// Synchronize products
         /// </summary>
-        public async Task SyncProductsAsync()
+        public void SyncProducts()
         {
-            var products = await _productService.SearchProductsAsync(pageSize: _omnisendSettings.PageSize);
+            var products = _productService.SearchProducts(pageSize: _omnisendSettings.PageSize);
 
             if (products.TotalCount >= OmnisendDefaults.MinCountToUseBatch || products.TotalCount > _omnisendSettings.PageSize)
             {
@@ -566,35 +578,35 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                     var data = JsonConvert.SerializeObject(new BatchRequest
                     {
                         Endpoint = OmnisendDefaults.ProductsEndpoint,
-                        Items = await products.SelectAwait(async product => await ProductToDtoAsync(product) as IBatchSupport).ToListAsync()
+                        Items = products.Select(product => ProductToDto(product) as IBatchSupport).ToList()
                     });
 
-                    var rez = await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
+                    var rez = _omnisendHttpClient.PerformRequest(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
 
                     var bathId = JsonConvert.DeserializeAnonymousType(rez, new { batchID = "" })?.batchID;
 
                     if (bathId != null)
                     {
                         _omnisendSettings.BatchesIds.Add(bathId);
-                        await _settingService.SaveSettingAsync(_omnisendSettings);
+                        _settingService.SaveSetting(_omnisendSettings);
                     }
 
                     page++;
 
-                    products = await _productService.SearchProductsAsync(pageIndex: page, pageSize: _omnisendSettings.PageSize);
+                    products = _productService.SearchProducts(pageIndex: page, pageSize: _omnisendSettings.PageSize);
                 }
             }
             else
                 foreach (var product in products)
-                    await AddNewProductAsync(product);
+                    AddNewProduct(product);
         }
 
         /// <summary>
         /// Synchronize orders
         /// </summary>
-        public async Task SyncOrdersAsync()
+        public void SyncOrders()
         {
-            var orders = await _orderService.SearchOrdersAsync(pageSize: _omnisendSettings.PageSize);
+            var orders = _orderService.SearchOrders(pageSize: _omnisendSettings.PageSize);
 
             if (orders.TotalCount >= OmnisendDefaults.MinCountToUseBatch || orders.TotalCount > _omnisendSettings.PageSize)
             {
@@ -605,40 +617,40 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                     var data = JsonConvert.SerializeObject(new BatchRequest
                     {
                         Endpoint = OmnisendDefaults.OrdersEndpoint,
-                        Items = await orders.SelectAwait(async order => await OrderToDtoAsync(order) as IBatchSupport).ToListAsync()
+                        Items = orders.Select(order => OrderToDto(order) as IBatchSupport).ToList()
                     });
 
-                    var rez = await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
+                    var rez = _omnisendHttpClient.PerformRequest(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
 
                     var bathId = JsonConvert.DeserializeAnonymousType(rez, new { batchID = "" })?.batchID;
 
                     if (bathId != null)
                     {
                         _omnisendSettings.BatchesIds.Add(bathId);
-                        await _settingService.SaveSettingAsync(_omnisendSettings);
+                        _settingService.SaveSetting(_omnisendSettings);
                     }
 
                     page++;
 
-                    orders = await _orderService.SearchOrdersAsync(pageIndex: page, pageSize: _omnisendSettings.PageSize);
+                    orders = _orderService.SearchOrders(pageIndex: page, pageSize: _omnisendSettings.PageSize);
                 }
             }
             else
                 foreach (var order in orders)
-                    await CreateOrderAsync(order);
+                    CreateOrder(order);
         }
 
         /// <summary>
         /// Synchronize shopping carts
         /// </summary>
-        public async Task SyncCartsAsync()
+        public void SyncCarts()
         {
-            var store = await _storeContext.GetCurrentStoreAsync();
-            var customers = await _customerService.GetCustomersWithShoppingCartsAsync(ShoppingCartType.ShoppingCart, store.Id);
+            var store = _storeContext.CurrentStore;
+            var customers = _customerService.GetCustomersWithShoppingCarts(ShoppingCartType.ShoppingCart, store.Id);
             foreach (var customer in customers)
             {
-                var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
-                await CreateCartAsync(cart);
+                var cart = _shoppingCartService.GetShoppingCart(customer, ShoppingCartType.ShoppingCart, store.Id);
+                CreateCart(cart);
             }
         }
 
@@ -654,11 +666,11 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// A task that represents the asynchronous operation
         /// The task result contains the brand identifier or null
         /// </returns>
-        public async Task<string> GetBrandIdAsync(string apiKey)
+        public string GetBrandId(string apiKey)
         {
             _omnisendHttpClient.ApiKey = apiKey;
 
-            var result = await _omnisendHttpClient.PerformRequestAsync<AccountsResponse>(OmnisendDefaults.AccountsApiUrl);
+            var result = _omnisendHttpClient.PerformRequest<AccountsResponse>(OmnisendDefaults.AccountsApiUrl);
 
             return result?.BrandId;
         }
@@ -666,7 +678,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// <summary>
         /// Registers the site on the omnisend service
         /// </summary>
-        public async Task SendCustomerDataAsync()
+        public void SendCustomerData()
         {
             var site = _webHelper.GetStoreLocation();
 
@@ -677,18 +689,18 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 version = OmnisendDefaults.IntegrationVersion
             });
 
-            await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.AccountsApiUrl, data, HttpMethod.Post);
+            _omnisendHttpClient.PerformRequest(OmnisendDefaults.AccountsApiUrl, data, HttpMethod.Post);
         }
 
         /// <summary>
         /// Gets information about batch
         /// </summary>
         /// <param name="bathId">Batch identifier</param>
-        public async ValueTask<BatchResponse> GetBatchInfoAsync(string bathId)
+        public BatchResponse GetBatchInfo(string bathId)
         {
             var url = OmnisendDefaults.BatchesApiUrl + $"/{bathId}";
 
-            var result = await _omnisendHttpClient.PerformRequestAsync<BatchResponse>(url, httpMethod: HttpMethod.Get);
+            var result = _omnisendHttpClient.PerformRequest<BatchResponse>(url, httpMethod: HttpMethod.Get);
 
             return result;
         }
@@ -701,11 +713,11 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Gets the contacts information
         /// </summary>
         /// <param name="contactId">Contact identifier</param>
-        public async Task<ContactInfoDto> GetContactInfoAsync(string contactId)
+        public ContactInfoDto GetContactInfo(string contactId)
         {
             var url = $"{OmnisendDefaults.ContactsApiUrl}/{contactId}";
 
-            var res = await _omnisendHttpClient.PerformRequestAsync<ContactInfoDto>(url, httpMethod: HttpMethod.Get);
+            var res = _omnisendHttpClient.PerformRequest<ContactInfoDto>(url, httpMethod: HttpMethod.Get);
 
             return res;
         }
@@ -714,22 +726,22 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Update or create contact information
         /// </summary>
         /// <param name="request">Create contact request</param>
-        public async Task UpdateOrCreateContactAsync(CreateContactRequest request)
+        public void UpdateOrCreateContact(CreateContactRequest request)
         {
             var email = request.Identifiers.First().Id;
-            var exists = !string.IsNullOrEmpty(await _omnisendCustomerService.GetContactIdAsync(email));
+            var exists = !string.IsNullOrEmpty(_omnisendCustomerService.GetContactId(email));
 
             if (!exists)
             {
                 var data = JsonConvert.SerializeObject(request);
-                await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.ContactsApiUrl, data, HttpMethod.Post);
+                _omnisendHttpClient.PerformRequest(OmnisendDefaults.ContactsApiUrl, data, HttpMethod.Post);
             }
             else
             {
                 var url = $"{OmnisendDefaults.ContactsApiUrl}?email={email}";
                 var data = JsonConvert.SerializeObject(new { identifiers = new[] { request.Identifiers.First() } });
 
-                await _omnisendHttpClient.PerformRequestAsync(url, data, HttpMethod.Patch);
+                _omnisendHttpClient.PerformRequest(url, data, HttpMethod.Patch);
             }
         }
 
@@ -738,25 +750,23 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// </summary>
         /// <param name="subscription">Newsletter subscription</param>
         /// <param name="sendWelcomeMessage">Specifies whether to send a welcome message</param>
-        public async Task UpdateOrCreateContactAsync(NewsLetterSubscription subscription, bool sendWelcomeMessage = false)
+        public void UpdateOrCreateContact(NewsLetterSubscription subscription, bool sendWelcomeMessage = false)
         {
-            var su = await PrepareNewsletterSubscribersAsync(subscription.StoreId,
+            var su = PrepareNewsletterSubscribers(subscription.StoreId,
                 0, _omnisendSettings.PageSize,
                 sendWelcomeMessage, subscription, "unsubscribed");
 
-            if (su.FirstOrDefault() is not CreateContactRequest request)
-                return;
-
-            await UpdateOrCreateContactAsync(request);
+            if (su.FirstOrDefault() is CreateContactRequest request)
+                UpdateOrCreateContact(request);
         }
 
         /// <summary>
         /// Updates contact information by customer data
         /// </summary>
         /// <param name="customer">Customer</param>
-        public async Task UpdateContactAsync(Customer customer)
+        public void UpdateContact(Customer customer)
         {
-            var contactId = await _omnisendCustomerService.GetContactIdAsync(customer.Email);
+            var contactId = _omnisendCustomerService.GetContactId(customer.Email);
 
             if (string.IsNullOrEmpty(contactId))
                 return;
@@ -765,11 +775,11 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
             var dto = new BaseContactInfoDto();
 
-            await FillCustomerInfoAsync(dto, customer);
+            FillCustomerInfo(dto, customer);
 
             var data = JsonConvert.SerializeObject(dto);
 
-            await _omnisendHttpClient.PerformRequestAsync(url, data, HttpMethod.Patch);
+            _omnisendHttpClient.PerformRequest(url, data, HttpMethod.Patch);
         }
 
         #endregion
@@ -780,36 +790,36 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Adds new product
         /// </summary>
         /// <param name="product">Product to add</param>
-        public async Task AddNewProductAsync(Product product)
+        public void AddNewProduct(Product product)
         {
-            var data = JsonConvert.SerializeObject(await ProductToDtoAsync(product));
-            await _omnisendHttpClient.PerformRequestAsync(OmnisendDefaults.ProductsApiUrl, data, HttpMethod.Post);
+            var data = JsonConvert.SerializeObject(ProductToDto(product));
+            _omnisendHttpClient.PerformRequest(OmnisendDefaults.ProductsApiUrl, data, HttpMethod.Post);
         }
 
         /// <summary>
         /// Updates the product
         /// </summary>
         /// <param name="productId">Product identifier to update</param>
-        public async Task UpdateProductAsync(int productId)
+        public void UpdateProduct(int productId)
         {
-            var product = await _productService.GetProductByIdAsync(productId);
+            var product = _productService.GetProductById(productId);
 
-            await CreateOrUpdateProductAsync(product);
+            CreateOrUpdateProduct(product);
         }
 
         /// <summary>
         /// Updates the product
         /// </summary>
         /// <param name="product">Product to update</param>
-        public async Task CreateOrUpdateProductAsync(Product product)
+        public void CreateOrUpdateProduct(Product product)
         {
-            var result = await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.ProductsApiUrl}/{product.Id}", httpMethod: HttpMethod.Get);
+            var result = _omnisendHttpClient.PerformRequest($"{OmnisendDefaults.ProductsApiUrl}/{product.Id}", httpMethod: HttpMethod.Get);
             if (string.IsNullOrEmpty(result))
-                await AddNewProductAsync(product);
+                AddNewProduct(product);
             else
             {
-                var data = JsonConvert.SerializeObject(await ProductToDtoAsync(product));
-                await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.ProductsApiUrl}/{product.Id}", data, HttpMethod.Put);
+                var data = JsonConvert.SerializeObject(ProductToDto(product));
+                _omnisendHttpClient.PerformRequest($"{OmnisendDefaults.ProductsApiUrl}/{product.Id}", data, HttpMethod.Put);
             }
         }
 
@@ -821,9 +831,9 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Restore the abandoned shopping cart
         /// </summary>
         /// <param name="cartId">Cart identifier</param>
-        public async Task RestoreShoppingCartAsync(string cartId)
+        public void RestoreShoppingCart(string cartId)
         {
-            var res = await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.CartsApiUrl}/{cartId}", httpMethod: HttpMethod.Get);
+            var res = _omnisendHttpClient.PerformRequest($"{OmnisendDefaults.CartsApiUrl}/{cartId}", httpMethod: HttpMethod.Get);
 
             if (string.IsNullOrEmpty(res))
                 return;
@@ -831,21 +841,21 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             var restoredCart = JsonConvert.DeserializeObject<CartDto>(res)
                 ?? throw new NopException("Cart data can't be loaded");
 
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var store = await _storeContext.GetCurrentStoreAsync();
-            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var customer = _workContext.CurrentCustomer;
+            var store = _storeContext.CurrentStore;
+            var cart = _shoppingCartService.GetShoppingCart(customer, ShoppingCartType.ShoppingCart, store.Id);
 
             foreach (var cartProduct in restoredCart.Products)
             {
-                var combination = await _productAttributeService.GetProductAttributeCombinationBySkuAsync(cartProduct.Sku);
-                var product = combination == null ? await _productService.GetProductBySkuAsync(cartProduct.Sku) : await _productService.GetProductByIdAsync(combination.ProductId);
+                var combination = _productAttributeService.GetProductAttributeCombinationBySku(cartProduct.Sku);
+                var product = combination == null ? _productService.GetProductBySku(cartProduct.Sku) : _productService.GetProductById(combination.ProductId);
 
                 if (product == null)
                 {
                     if (!int.TryParse(cartProduct.VariantId, out var variantId))
                         continue;
 
-                    product = await _productService.GetProductByIdAsync(variantId);
+                    product = _productService.GetProductById(variantId);
 
                     if (product == null)
                         continue;
@@ -854,11 +864,10 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 var shoppingCartItem = cart.FirstOrDefault(item => item.ProductId.ToString() == cartProduct.ProductId &&
                     item.Quantity == cartProduct.Quantity &&
                     item.AttributesXml == combination?.AttributesXml);
-                if (shoppingCartItem is not null)
-                    continue;
-
-                await _shoppingCartService.AddToCartAsync(customer, product, ShoppingCartType.ShoppingCart, store.Id,
-                    combination?.AttributesXml, quantity: cartProduct.Quantity);
+                
+                if (shoppingCartItem is null)
+                    _shoppingCartService.AddToCart(customer, product, ShoppingCartType.ShoppingCart, store.Id,
+                        combination?.AttributesXml, quantity: cartProduct.Quantity);
             }
         }
 
@@ -866,51 +875,51 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Adds new item to the shopping cart
         /// </summary>
         /// <param name="shoppingCartItem">Shopping cart item</param>
-        public async Task AddShoppingCartItemAsync(ShoppingCartItem shoppingCartItem)
+        public void AddShoppingCartItem(ShoppingCartItem shoppingCartItem)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(shoppingCartItem.CustomerId);
+            var customer = _customerService.GetCustomerById(shoppingCartItem.CustomerId);
 
-            if (!await CanSendRequestAsync(customer))
+            if (!CanSendRequest(customer))
                 return;
 
-            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, shoppingCartItem.StoreId);
+            var cart = _shoppingCartService.GetShoppingCart(customer, ShoppingCartType.ShoppingCart, shoppingCartItem.StoreId);
 
             if (cart.Count == 1)
-                await CreateCartAsync(cart);
+                CreateCart(cart);
             else
-                await UpdateCartAsync(customer, shoppingCartItem);
+                UpdateCart(customer, shoppingCartItem);
         }
 
         /// <summary>
         /// Updates the shopping cart item
         /// </summary>
         /// <param name="shoppingCartItem">Shopping cart item</param>
-        public async Task EditShoppingCartItemAsync(ShoppingCartItem shoppingCartItem)
+        public void EditShoppingCartItem(ShoppingCartItem shoppingCartItem)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(shoppingCartItem.CustomerId);
+            var customer = _customerService.GetCustomerById(shoppingCartItem.CustomerId);
 
-            if (!await CanSendRequestAsync(customer))
+            if (!CanSendRequest(customer))
                 return;
 
-            var item = await ShoppingCartItemToDtoAsync(shoppingCartItem, customer);
+            var item = ShoppingCartItemToDto(shoppingCartItem, customer);
 
             var data = JsonConvert.SerializeObject(item);
 
-            await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.CartsApiUrl}/{await _omnisendCustomerService.GetCartIdAsync(customer)}/{OmnisendDefaults.ProductsEndpoint}/{item.CartProductId}", data, HttpMethod.Put);
+            _omnisendHttpClient.PerformRequest($"{OmnisendDefaults.CartsApiUrl}/{_omnisendCustomerService.GetCartId(customer)}/{OmnisendDefaults.ProductsEndpoint}/{item.CartProductId}", data, HttpMethod.Put);
         }
 
         /// <summary>
         /// Deletes item from shopping cart
         /// </summary>
         /// <param name="shoppingCartItem">Shopping cart item</param>
-        public async Task DeleteShoppingCartItemAsync(ShoppingCartItem shoppingCartItem)
+        public void DeleteShoppingCartItem(ShoppingCartItem shoppingCartItem)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(shoppingCartItem.CustomerId);
+            var customer = _customerService.GetCustomerById(shoppingCartItem.CustomerId);
 
-            if (!await CanSendRequestAsync(customer))
+            if (!CanSendRequest(customer))
                 return;
 
-            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, shoppingCartItem.StoreId);
+            var cart = _shoppingCartService.GetShoppingCart(customer, ShoppingCartType.ShoppingCart, shoppingCartItem.StoreId);
 
             //var sendRequest = await _omnisendCustomerService.IsNeedToSendDeleteShoppingCartEventAsync(customer);
 
@@ -918,12 +927,9 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             //    await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.CartsApiUrl}/{await _omnisendCustomerService.GetCartIdAsync(customer)}/{OmnisendDefaults.ProductsEndpoint}/{shoppingCartItem.Id}", httpMethod: HttpMethod.Delete);
 
             if (!cart.Any())
-            {
                 //if (sendRequest)
                 //    await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.CartsApiUrl}/{await _omnisendCustomerService.GetCartIdAsync(customer)}", httpMethod: HttpMethod.Delete);
-
-                await _omnisendCustomerService.DeleteCurrentCustomerShoppingCartIdAsync(customer);
-            }
+                _omnisendCustomerService.DeleteCurrentCustomerShoppingCartId(customer);
         }
 
         #endregion
@@ -934,53 +940,52 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// Sends the new order to the omnisend service
         /// </summary>
         /// <param name="order">Order</param>
-        public async Task PlaceOrderAsync(Order order)
+        public void PlaceOrder(Order order)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+            var customer = _customerService.GetCustomerById(order.CustomerId);
 
-            if (!await CanSendRequestAsync(customer))
+            if (!CanSendRequest(customer))
                 return;
 
             //await CreateOrderAsync(order);
 
-            await _omnisendCustomerService.DeleteStoredCustomerShoppingCartIdAsync(customer);
+            _omnisendCustomerService.DeleteStoredCustomerShoppingCartId(customer);
         }
 
         /// <summary>
         /// Updates the order information
         /// </summary>
         /// <param name="order">Order</param>
-        public async Task UpdateOrderAsync(Order order)
+        public void UpdateOrder(Order order)
         {
-            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+            var customer = _customerService.GetCustomerById(order.CustomerId);
 
-            if (!await CanSendRequestAsync(customer))
+            if (!CanSendRequest(customer))
                 return;
 
-            var item = await OrderToDtoAsync(order);
+            var item = OrderToDto(order);
             if (item is null)
                 return;
 
             var data = JsonConvert.SerializeObject(item);
-            await _omnisendHttpClient.PerformRequestAsync($"{OmnisendDefaults.OrdersApiUrl}/{item.OrderId}", data, HttpMethod.Put);
+            _omnisendHttpClient.PerformRequest($"{OmnisendDefaults.OrdersApiUrl}/{item.OrderId}", data, HttpMethod.Put);
         }
 
         /// <summary>
         /// Store the CartId during order placing
         /// </summary>
         /// <param name="entity">Order item</param>
-        /// <returns></returns>
-        public async Task OrderItemAddedAsync(OrderItem entity)
+        public void OrderItemAdded(OrderItem entity)
         {
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var store = await _storeContext.GetCurrentStoreAsync();
-            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var customer = _workContext.CurrentCustomer;
+            var store = _storeContext.CurrentStore;
+            var cart = _shoppingCartService.GetShoppingCart(customer, ShoppingCartType.ShoppingCart, store.Id);
 
             if (cart.Any(sci =>
                     sci.ProductId == entity.ProductId &&
                     sci.AttributesXml.Equals(entity.AttributesXml, StringComparison.InvariantCultureIgnoreCase) &&
                     sci.Quantity == entity.Quantity))
-                await _omnisendCustomerService.StoreCartIdAsync(customer);
+                _omnisendCustomerService.StoreCartId(customer);
         }
 
         #endregion

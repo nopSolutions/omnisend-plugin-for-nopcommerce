@@ -9,7 +9,7 @@ namespace Nop.Plugin.Misc.Omnisend.Models
     /// <summary>
     /// Represents configuration model
     /// </summary>
-    public record ConfigurationModel : BaseNopModel
+    public class ConfigurationModel : BaseNopModel
     {
         #region Properties
 

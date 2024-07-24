@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Plugin.Misc.Omnisend.DTO;
 using Nop.Plugin.Misc.Omnisend.Models;
@@ -48,20 +47,20 @@ namespace Nop.Plugin.Misc.Omnisend.Controllers
 
         #region Utilities
 
-        private async Task FillBatchesAsync(ConfigurationModel model)
+        private void FillBatches(ConfigurationModel model)
         {
             if (!_omnisendSettings.BatchesIds.Any())
                 return;
 
-            var batches = await _omnisendSettings.BatchesIds.SelectAwait(_omnisendService.GetBatchInfoAsync)
-                .ToListAsync();
+            var batches = _omnisendSettings.BatchesIds.Select(_omnisendService.GetBatchInfo)
+                .ToList();
 
             batches = batches.Where(p => p != null).ToList();
 
             if (!batches.Any())
             {
                 _omnisendSettings.BatchesIds.Clear();
-                await _settingService.SaveSettingAsync(_omnisendSettings);
+                _settingService.SaveSetting(_omnisendSettings);
             }
 
             model.Batches = batches;
@@ -82,7 +81,7 @@ namespace Nop.Plugin.Misc.Omnisend.Controllers
                              StringComparison.InvariantCultureIgnoreCase)))
             {
                 _omnisendSettings.BatchesIds.Remove(batchResponse.BatchId);
-                await _settingService.SaveSettingAsync(_omnisendSettings);
+                _settingService.SaveSetting(_omnisendSettings);
             }
         }
 
@@ -90,7 +89,7 @@ namespace Nop.Plugin.Misc.Omnisend.Controllers
 
         #region Methods
 
-        public async Task<IActionResult> Configure()
+        public IActionResult Configure()
         {
             var model = new ConfigurationModel
             {
@@ -98,80 +97,80 @@ namespace Nop.Plugin.Misc.Omnisend.Controllers
                 UseTracking = _omnisendSettings.UseTracking
             };
 
-            await FillBatchesAsync(model);
+            FillBatches(model);
 
             return View(model);
         }
 
         [HttpPost, ActionName("Configure")]
         [FormValueRequired("save")]
-        public async Task<IActionResult> Configure(ConfigurationModel model)
+        public IActionResult Configure(ConfigurationModel model)
         {
             if (!ModelState.IsValid)
-                return await Configure();
+                return Configure();
 
             if (_omnisendSettings.ApiKey != model.ApiKey || string.IsNullOrEmpty(_omnisendSettings.BrandId))
             {
-                var brandId = await _omnisendService.GetBrandIdAsync(model.ApiKey);
+                var brandId = _omnisendService.GetBrandId(model.ApiKey);
 
                 if (brandId != null)
                 {
                     _omnisendSettings.ApiKey = model.ApiKey;
                     _omnisendSettings.BrandId = brandId;
 
-                    await _omnisendService.SendCustomerDataAsync();
+                    _omnisendService.SendCustomerData();
                 }
             }
 
             //_omnisendSettings.UseTracking = model.UseTracking;
             _omnisendSettings.UseTracking = true;
 
-            await _settingService.SaveSettingAsync(_omnisendSettings);
+            _settingService.SaveSetting(_omnisendSettings);
 
             if (string.IsNullOrEmpty(_omnisendSettings.BrandId))
-                _notificationService.ErrorNotification(await _localizationService.GetResourceAsync("Plugins.Misc.Omnisend.CantGetBrandId"));
+                _notificationService.ErrorNotification(_localizationService.GetResource("Plugins.Misc.Omnisend.CantGetBrandId"));
             else
-                _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Plugins.Saved"));
+                _notificationService.SuccessNotification(_localizationService.GetResource("Admin.Plugins.Saved"));
 
-            return await Configure();
+            return Configure();
         }
 
         [HttpPost, ActionName("Configure")]
         [FormValueRequired("sync-contacts")]
-        public async Task<IActionResult> SyncContacts()
+        public IActionResult SyncContacts()
         {
             if (!ModelState.IsValid || string.IsNullOrEmpty(_omnisendSettings.BrandId))
-                return await Configure();
+                return Configure();
 
-            await _omnisendService.SyncContactsAsync();
+            _omnisendService.SyncContacts();
 
-            return await Configure();
+            return Configure();
         }
 
         [HttpPost, ActionName("Configure")]
         [FormValueRequired("sync-products")]
-        public async Task<IActionResult> SyncProducts()
+        public IActionResult SyncProducts()
         {
             if (!ModelState.IsValid || string.IsNullOrEmpty(_omnisendSettings.BrandId))
-                return await Configure();
+                return Configure();
 
-            await _omnisendService.SyncCategoriesAsync();
-            await _omnisendService.SyncProductsAsync();
+            _omnisendService.SyncCategories();
+            _omnisendService.SyncProducts();
 
-            return await Configure();
+            return Configure();
         }
 
         [HttpPost, ActionName("Configure")]
         [FormValueRequired("sync-orders")]
-        public async Task<IActionResult> SyncOrders()
+        public IActionResult SyncOrders()
         {
             if (!ModelState.IsValid || string.IsNullOrEmpty(_omnisendSettings.BrandId))
-                return await Configure();
+                return Configure();
 
-            await _omnisendService.SyncOrdersAsync();
-            await _omnisendService.SyncCartsAsync();
+            _omnisendService.SyncOrders();
+            _omnisendService.SyncCarts();
 
-            return await Configure();
+            return Configure();
         }
 
         #endregion

@@ -1,18 +1,15 @@
 ﻿using System;
 using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ViewComponents;
 using Nop.Core;
-using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
 using Nop.Plugin.Misc.Omnisend.Services;
 using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Web.Framework.Components;
 using Nop.Web.Framework.Infrastructure;
-using Nop.Web.Framework.Mvc.Routing;
 using Nop.Web.Models.Catalog;
 
 namespace Nop.Plugin.Misc.Omnisend.Components
@@ -20,15 +17,16 @@ namespace Nop.Plugin.Misc.Omnisend.Components
     /// <summary>
     /// Represents view component to embed tracking script on pages
     /// </summary>
+    [ViewComponent(Name = OmnisendDefaults.VIEW_COMPONENT_NAME)]
     public class WidgetsOmnisendViewComponent : NopViewComponent
     {
         #region Fields
 
         private readonly ICustomerService _customerService;
         private readonly IGenericAttributeService _genericAttributeService;
-        private readonly INopUrlHelper _nopUrlHelper;
         private readonly IWebHelper _webHelper;
         private readonly IWorkContext _workContext;
+        private readonly OmnisendHelper _omnisendHelper;
         private readonly OmnisendService _omnisendService;
         private readonly OmnisendSettings _omnisendSettings;
 
@@ -38,17 +36,17 @@ namespace Nop.Plugin.Misc.Omnisend.Components
 
         public WidgetsOmnisendViewComponent(ICustomerService customerService,
             IGenericAttributeService genericAttributeService,
-            INopUrlHelper nopUrlHelper,
             IWebHelper webHelper,
             IWorkContext workContext,
+            OmnisendHelper omnisendHelper,
             OmnisendService omnisendService,
             OmnisendSettings omnisendSettings)
         {
             _customerService = customerService;
             _genericAttributeService = genericAttributeService;
-            _nopUrlHelper = nopUrlHelper;
             _webHelper = webHelper;
             _workContext = workContext;
+            _omnisendHelper = omnisendHelper;
             _omnisendService = omnisendService;
             _omnisendSettings = omnisendSettings;
         }
@@ -57,14 +55,14 @@ namespace Nop.Plugin.Misc.Omnisend.Components
 
         #region Utilities
 
-        private async Task<string> AddIdentifyContactScriptAsync(string script)
+        private string AddIdentifyContactScript(string script)
         {
-            var customer = await _workContext.GetCurrentCustomerAsync();
+            var customer = _workContext.CurrentCustomer;
 
-            if (await _customerService.IsGuestAsync(customer))
-                await GenerateGuestScriptAsync(customer);
+            if (_customerService.IsGuest(customer))
+                GenerateGuestScript(customer);
 
-            var identifyContactScript = await _genericAttributeService.GetAttributeAsync<string>(customer,
+            var identifyContactScript = _genericAttributeService.GetAttribute<string>(customer,
                 OmnisendDefaults.IdentifyContactAttribute);
 
             if (string.IsNullOrEmpty(identifyContactScript))
@@ -72,15 +70,15 @@ namespace Nop.Plugin.Misc.Omnisend.Components
 
             script += $"{Environment.NewLine}{identifyContactScript}";
 
-            await _genericAttributeService.SaveAttributeAsync<string>(customer,
+            _genericAttributeService.SaveAttribute<string>(customer,
                 OmnisendDefaults.IdentifyContactAttribute, null);
 
             return script;
         }
 
-        private async Task GenerateGuestScriptAsync(Customer customer)
+        private void GenerateGuestScript(Customer customer)
         {
-            var customerEmail = await _genericAttributeService.GetAttributeAsync<string>(customer,
+            var customerEmail = _genericAttributeService.GetAttribute<string>(customer,
                 OmnisendDefaults.CustomerEmailAttribute);
 
             if (!string.IsNullOrEmpty(customerEmail))
@@ -95,14 +93,14 @@ namespace Nop.Plugin.Misc.Omnisend.Components
             if (string.IsNullOrEmpty(omnisendContactId))
                 return;
 
-            var contact = await _omnisendService.GetContactInfoAsync(omnisendContactId);
+            var contact = _omnisendService.GetContactInfo(omnisendContactId);
 
             var email = contact?.Identifiers.FirstOrDefault(p => !string.IsNullOrEmpty(p.Id))?.Id;
 
             if (string.IsNullOrEmpty(email))
                 return;
 
-            await _genericAttributeService.SaveAttributeAsync(customer,
+            _genericAttributeService.SaveAttribute(customer,
                 OmnisendDefaults.CustomerEmailAttribute, email);
 
             if (string.IsNullOrEmpty(_omnisendSettings.IdentifyContactScript))
@@ -111,7 +109,7 @@ namespace Nop.Plugin.Misc.Omnisend.Components
             var identifyScript = _omnisendSettings.IdentifyContactScript.Replace(OmnisendDefaults.Email,
                 email);
 
-            await _genericAttributeService.SaveAttributeAsync(customer,
+            _genericAttributeService.SaveAttribute(customer,
                 OmnisendDefaults.IdentifyContactAttribute, identifyScript);
         }
 
@@ -125,10 +123,9 @@ namespace Nop.Plugin.Misc.Omnisend.Components
         /// <param name="widgetZone">Widget zone name</param>
         /// <param name="additionalData">Additional data</param>
         /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the view component result
+        /// The view component result
         /// </returns>
-        public async Task<IViewComponentResult> InvokeAsync(string widgetZone, object additionalData)
+        public IViewComponentResult Invoke(string widgetZone, object additionalData)
         {
             //ensure tracking is enabled
             if (!_omnisendSettings.UseTracking || string.IsNullOrEmpty(_omnisendSettings.BrandId))
@@ -139,7 +136,7 @@ namespace Nop.Plugin.Misc.Omnisend.Components
             //prepare tracking script
             if (!string.IsNullOrEmpty(_omnisendSettings.TrackingScript) &&
                 widgetZone.Equals(PublicWidgetZones.BodyStartHtmlTagAfter, StringComparison.InvariantCultureIgnoreCase))
-                script = await AddIdentifyContactScriptAsync(_omnisendSettings.TrackingScript
+                script = AddIdentifyContactScript(_omnisendSettings.TrackingScript
                     .Replace(OmnisendDefaults.BrandId, _omnisendSettings.BrandId));
 
             //prepare product script
@@ -147,7 +144,6 @@ namespace Nop.Plugin.Misc.Omnisend.Components
                 widgetZone.Equals(PublicWidgetZones.ProductDetailsBottom,
                     StringComparison.InvariantCultureIgnoreCase) &&
                 additionalData is ProductDetailsModel productDetails)
-            {
                 script = _omnisendSettings.ProductScript
                     .Replace(OmnisendDefaults.ProductId, $"{productDetails.Id}")
                     .Replace(OmnisendDefaults.Sku, productDetails.Sku)
@@ -155,13 +151,12 @@ namespace Nop.Plugin.Misc.Omnisend.Components
                     .Replace(OmnisendDefaults.Price, $"{(int)(productDetails.ProductPrice.PriceValue * 100)}")
                     .Replace(OmnisendDefaults.Title, productDetails.Name)
                     .Replace(OmnisendDefaults.ImageUrl, productDetails.DefaultPictureModel.ImageUrl)
-                    .Replace(OmnisendDefaults.ProductUrl,
-                        await _nopUrlHelper.RouteGenericUrlAsync<Product>(new { SeName = productDetails.SeName }, _webHelper.GetCurrentRequestProtocol()));
-            }
+                    .Replace(OmnisendDefaults.ProductUrl, _omnisendHelper.GetProductUrl(new { productDetails.SeName }));
 
-            return string.IsNullOrEmpty(script)
-                ? Content(string.Empty)
-                : new HtmlContentViewComponentResult(new HtmlString(script));
+            if (string.IsNullOrEmpty(script))
+                return Content(string.Empty);
+
+            return new HtmlContentViewComponentResult(new HtmlString(script));
         }
 
         #endregion

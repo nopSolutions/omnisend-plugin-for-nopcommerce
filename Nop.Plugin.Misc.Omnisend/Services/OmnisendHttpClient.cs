@@ -2,7 +2,6 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Nop.Core;
@@ -59,7 +58,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// <param name="data">Data to send</param>
         /// <param name="httpMethod">Request type. null == HttpMethod.Get</param>
         /// <returns>The asynchronous task whose result contains response details</returns>
-        private async Task<string> RequestAsync(string apiUri, string data = null, HttpMethod httpMethod = null)
+        private string Request(string apiUri, string data = null, HttpMethod httpMethod = null)
         {
             //specifies whether to skip BrandId parameter validation
             var skipBrandIdCheck = apiUri.Equals(OmnisendDefaults.AccountsApiUrl);
@@ -67,7 +66,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             if (string.IsNullOrEmpty(_omnisendSettings.BrandId) && !skipBrandIdCheck)
             {
                 if(_omnisendSettings.LogRequestErrors)
-                    await _logger.InsertLogAsync(LogLevel.Error, $"{OmnisendDefaults.SystemName} configuration error", await _localizationService.GetResourceAsync("Plugins.Misc.Omnisend.CantGetBrandId"));
+                    _logger.InsertLog(LogLevel.Error, $"{OmnisendDefaults.SystemName} configuration error", _localizationService.GetResource("Plugins.Misc.Omnisend.CantGetBrandId"));
 
                 return null;
             }
@@ -87,7 +86,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                     logMessage += $"{Environment.NewLine}{data}{Environment.NewLine}";
                 }
 
-                await _logger.InsertLogAsync(LogLevel.Debug, $"{OmnisendDefaults.SystemName} request details", logMessage);
+                _logger.InsertLog(LogLevel.Debug, $"{OmnisendDefaults.SystemName} request details", logMessage);
             }
 
             var request = new HttpRequestMessage
@@ -101,17 +100,17 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             if (httpMethod != HttpMethod.Get && !string.IsNullOrEmpty(data))
                 request.Content = new StringContent(data, Encoding.UTF8, MimeTypes.ApplicationJson);
 
-            var httpResponse = await _httpClient.SendAsync(request);
-            var response = await httpResponse.Content.ReadAsStringAsync();
+            var httpResponse = _httpClient.SendAsync(request).Result;
+            var response = httpResponse.Content.ReadAsStringAsync().Result;
 
             if (_omnisendSettings.LogRequests)
             {
                 var logMessage = $"Response:{Environment.NewLine}";
                 logMessage += !httpResponse.IsSuccessStatusCode
-                    ? $"{httpResponse.StatusCode}: {httpResponse.RequestMessage?.ToString()}"
+                    ? $"{httpResponse.StatusCode}: {httpResponse.RequestMessage}"
                     : response;
 
-                await _logger.InsertLogAsync(LogLevel.Debug, $"{OmnisendDefaults.SystemName} response details",
+                _logger.InsertLog(LogLevel.Debug, $"{OmnisendDefaults.SystemName} response details",
                     logMessage);
             }
 
@@ -135,18 +134,18 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             }
         }
 
-        private async Task<T> RequestAsync<T>(string apiUri, string data = null, HttpMethod httpMethod = null)
+        private T Request<T>(string apiUri, string data = null, HttpMethod httpMethod = null)
         {
-            var response = await RequestAsync(apiUri, data, httpMethod);
+            var response = Request(apiUri, data, httpMethod);
 
             return string.IsNullOrEmpty(response) ? default : JsonConvert.DeserializeObject<T>(response);
         }
 
-        private async Task<T> PerformRequestAsync<T>(Func<Task<T>> request)
+        private T PerformRequest<T>(Func<T> request)
         {
             try
             {
-                var result = await request();
+                var result = request();
 
                 return result;
             }
@@ -158,7 +157,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 var errorMessage = exception.Message;
 
                 var logMessage = $"{OmnisendDefaults.SystemName} error: {Environment.NewLine}{errorMessage}";
-                await _logger.ErrorAsync(logMessage, exception, await _workContext.GetCurrentCustomerAsync());
+                _logger.Error(logMessage, exception, _workContext.CurrentCustomer);
 
                 return default;
             }
@@ -178,9 +177,9 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// A task that represents the asynchronous operation
         /// The task result contains the HTTP response data
         /// </returns>
-        public async Task<string> PerformRequestAsync(string apiUri, string data = null, HttpMethod httpMethod = null)
+        public string PerformRequest(string apiUri, string data = null, HttpMethod httpMethod = null)
         {
-            return await PerformRequestAsync(async () => await RequestAsync(apiUri, data, httpMethod));
+            return PerformRequest(() => Request(apiUri, data, httpMethod));
         }
 
         /// <summary>
@@ -193,9 +192,9 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// A task that represents the asynchronous operation
         /// The task result contains the object
         /// </returns>
-        public async Task<T> PerformRequestAsync<T>(string apiUri, string data = null, HttpMethod httpMethod = null)
+        public T PerformRequest<T>(string apiUri, string data = null, HttpMethod httpMethod = null)
         {
-            return await PerformRequestAsync<T>(async () => await RequestAsync<T>(apiUri,  data, httpMethod));
+            return PerformRequest(() => Request<T>(apiUri,  data, httpMethod));
         }
 
         #endregion

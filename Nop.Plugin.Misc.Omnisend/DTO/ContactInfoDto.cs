@@ -16,7 +16,7 @@ namespace Nop.Plugin.Misc.Omnisend.DTO
             {
                 Id = subscription.Email;
                 SendWelcomeMessage = sendWelcomeMessage;
-                Channels = new(subscription, inactiveStatus);
+                Channels = new EmailChannel(subscription, inactiveStatus);
             }
 
             public Identifier()

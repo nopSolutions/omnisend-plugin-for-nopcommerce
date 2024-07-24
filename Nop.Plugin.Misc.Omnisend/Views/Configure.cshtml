@@ -5,11 +5,11 @@
 }
 
 <form asp-controller="OmnisendAdmin" asp-action="Configure" method="post">
-    <nop-cards>
-        <nop-card asp-name="omnisend-general" asp-icon="fas fa-info" asp-title="@T("Plugins.Misc.Omnisend.Credentials")" asp-hide-block-attribute-name="omnisend-general" asp-hide="false" asp-advanced="false">
-            <div class="card-body">
-                <div class="card card-default">
-                    <div class="card-body">
+    <nop-panels>
+        <nop-panel asp-name="omnisend-general" asp-icon="fa fa-info" asp-title="@T("Plugins.Misc.Omnisend.Credentials")" asp-hide-block-attribute-name="omnisend-general" asp-hide="false" asp-advanced="false">
+            <div class="panel-group">
+                <div class="panel panel-default">
+                    <div class="panel-body">
                         <p>
                             To enable this plugin, you'll need to:<br />
                             <br />
@@ -36,31 +36,25 @@
                                 <span asp-validation-for="UseTracking"></span>
                             </div>
                         </div>*@
-                        <div class="form-group row">
-                            <button type="submit" name="save" class="btn btn-primary">
-                                @T("Admin.Common.Save")
-                            </button>
+                        <div class="form-group">
+                            <div class="col-md-9 col-md-offset-3">
+                                <input type="submit" name="save" class="btn btn-primary" value="@T("Admin.Common.Save")" />
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </nop-card>
-        <nop-card asp-name="omnisend-synchronization" asp-icon="fas fa-refresh" asp-title="@T("Plugins.Misc.Omnisend.Synchronization")" asp-hide-block-attribute-name="omnisend-synchronization" asp-hide="false" asp-advanced="false">
-            <div class="card-body">
-                <div class="card card-default">
-                    <div class="card-body">
+        </nop-panel>
+        <nop-panel asp-name="omnisend-synchronization" asp-icon="fa fa-refresh" asp-title="@T("Plugins.Misc.Omnisend.Synchronization")" asp-hide-block-attribute-name="omnisend-synchronization" asp-hide="false" asp-advanced="false">
+            <div class="panel-group">
+                <div class="panel panel-default">
+                    <div class="panel-body">
                         <div class="content-header clearfix">
-                            <div class="float-right">
-                                <button type="submit" name="sync-contacts" class="btn bg-blue" @(Model.BlockSyncContacts ? "disabled=\"disabled\"" : string.Empty)>
-                                    @T("Plugins.Misc.Omnisend.SyncContacts")
-                                </button>
-                                <button type="submit" name="sync-products" class="btn bg-purple" @(Model.BlockSyncProducts ? "disabled=\"disabled\"" : string.Empty)>
-                                    @T("Plugins.Misc.Omnisend.SyncProducts")
-                                </button>
+                            <div class="pull-right">
+                                <input type="submit" name="sync-contacts" class="btn bg-blue" @(Model.BlockSyncContacts ? "disabled=\"disabled\"" : string.Empty) value="@T("Plugins.Misc.Omnisend.SyncContacts")" />
+                                <input type="submit" name="sync-products" class="btn bg-purple" @(Model.BlockSyncProducts ? "disabled=\"disabled\"" : string.Empty) value="@T("Plugins.Misc.Omnisend.SyncProducts")" />
                                 @*//order history not supported at this moment*@
-                                @*<button type="submit" name="sync-orders" class="btn bg-olive" @(Model.BlockSyncOrders ? "disabled=\"disabled\"" : string.Empty)>
-                                    @T("Plugins.Misc.Omnisend.SyncOrders")
-                                </button>*@
+                                @*<input type="submit" name="sync-orders" class="btn bg-olive" @(Model.BlockSyncOrders ? "disabled=\"disabled\"" : string.Empty) value="@T("Plugins.Misc.Omnisend.SyncOrders")" />*@
                             </div>
                         </div>
                         <p>
@@ -108,6 +102,6 @@
                     </div>
                 </div>
             </div>
-        </nop-card>
-    </nop-cards>
+        </nop-panel>
+    </nop-panels>
 </form>
