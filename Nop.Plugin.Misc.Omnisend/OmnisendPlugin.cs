@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Nop.Core.Domain.Cms;
 using Nop.Core.Domain.Media;
-using Nop.Plugin.Misc.Omnisend.Components;
 using Nop.Services.Cms;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
@@ -64,18 +63,18 @@ namespace Nop.Plugin.Misc.Omnisend
         }
 
         /// <summary>
-        /// Gets a type of a view component for displaying widget
+        /// Gets a name of a view component for displaying widget
         /// </summary>
         /// <param name="widgetZone">Name of the widget zone</param>
-        /// <returns>View component type</returns>
-        public Type GetWidgetViewComponent(string widgetZone)
+        /// <returns>View component name</returns>
+        public string GetWidgetViewComponentName(string widgetZone)
         {
             if (widgetZone is null)
                 throw new ArgumentNullException(nameof(widgetZone));
 
             var zones = GetWidgetZonesAsync().Result;
 
-            return zones.Any(widgetZone.Equals) ? typeof(WidgetsOmnisendViewComponent) : null;
+            return zones.Any(widgetZone.Equals) ? OmnisendDefaults.VIEW_COMPONENT_NAME : null;
         }
 
         /// <summary>

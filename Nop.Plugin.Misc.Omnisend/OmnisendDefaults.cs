@@ -8,6 +8,11 @@ namespace Nop.Plugin.Misc.Omnisend
     /// </summary>
     public class OmnisendDefaults
     {
+        /// <summary>
+        /// Gets a name of the view component to insert omnisend script
+        /// </summary>
+        public const string VIEW_COMPONENT_NAME = "WidgetsOmnisend";
+
         #region Tokens
 
         public static string ProductId => "{ProductId}";
@@ -102,6 +107,16 @@ namespace Nop.Plugin.Misc.Omnisend
         /// ContactId query parameter name
         /// </summary>
         public static string ContactIdQueryParamName => "omnisendContactID";
+
+        /// <summary>
+        /// Gets an OrderCanceled attribute name
+        /// </summary>
+        public static string OrderCanceledAttribute => "Omnisend.OrderCanceledEvent.IsSent";
+
+        /// <summary>
+        /// Gets an OrderFulfilled attribute name
+        /// </summary>
+        public static string OrderFulfilledAttribute => "Omnisend.OrderFulfilledEvent.IsSent";
 
         #region Batch
 
