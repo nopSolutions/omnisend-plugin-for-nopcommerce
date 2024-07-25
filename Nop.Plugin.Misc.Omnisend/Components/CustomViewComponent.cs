@@ -5,14 +5,12 @@ using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ViewComponents;
 using Nop.Core;
-using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
 using Nop.Plugin.Misc.Omnisend.Services;
 using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Web.Framework.Components;
 using Nop.Web.Framework.Infrastructure;
-using Nop.Web.Framework.Mvc.Routing;
 using Nop.Web.Models.Catalog;
 
 namespace Nop.Plugin.Misc.Omnisend.Components
@@ -20,15 +18,16 @@ namespace Nop.Plugin.Misc.Omnisend.Components
     /// <summary>
     /// Represents view component to embed tracking script on pages
     /// </summary>
+    [ViewComponent(Name = OmnisendDefaults.VIEW_COMPONENT_NAME)]
     public class WidgetsOmnisendViewComponent : NopViewComponent
     {
         #region Fields
 
         private readonly ICustomerService _customerService;
         private readonly IGenericAttributeService _genericAttributeService;
-        private readonly INopUrlHelper _nopUrlHelper;
         private readonly IWebHelper _webHelper;
         private readonly IWorkContext _workContext;
+        private readonly OmnisendHelper _omnisendHelper;
         private readonly OmnisendService _omnisendService;
         private readonly OmnisendSettings _omnisendSettings;
 
@@ -38,17 +37,17 @@ namespace Nop.Plugin.Misc.Omnisend.Components
 
         public WidgetsOmnisendViewComponent(ICustomerService customerService,
             IGenericAttributeService genericAttributeService,
-            INopUrlHelper nopUrlHelper,
             IWebHelper webHelper,
             IWorkContext workContext,
+            OmnisendHelper omnisendHelper,
             OmnisendService omnisendService,
             OmnisendSettings omnisendSettings)
         {
             _customerService = customerService;
             _genericAttributeService = genericAttributeService;
-            _nopUrlHelper = nopUrlHelper;
             _webHelper = webHelper;
             _workContext = workContext;
+            _omnisendHelper = omnisendHelper;
             _omnisendService = omnisendService;
             _omnisendSettings = omnisendSettings;
         }
@@ -155,8 +154,7 @@ namespace Nop.Plugin.Misc.Omnisend.Components
                     .Replace(OmnisendDefaults.Price, $"{(int)(productDetails.ProductPrice.PriceValue * 100)}")
                     .Replace(OmnisendDefaults.Title, productDetails.Name)
                     .Replace(OmnisendDefaults.ImageUrl, productDetails.DefaultPictureModel.ImageUrl)
-                    .Replace(OmnisendDefaults.ProductUrl,
-                        await _nopUrlHelper.RouteGenericUrlAsync<Product>(new { SeName = productDetails.SeName }, _webHelper.GetCurrentRequestProtocol()));
+                    .Replace(OmnisendDefaults.ProductUrl, _omnisendHelper.GetProductUrl(new { productDetails.SeName }));
             }
 
             return string.IsNullOrEmpty(script)

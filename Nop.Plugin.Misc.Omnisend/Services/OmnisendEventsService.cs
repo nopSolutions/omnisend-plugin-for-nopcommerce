@@ -10,10 +10,8 @@ using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
-using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
-using Nop.Core.Domain.Shipping;
 using Nop.Plugin.Misc.Omnisend.DTO;
 using Nop.Plugin.Misc.Omnisend.DTO.Events;
 using Nop.Services.Catalog;
@@ -26,7 +24,6 @@ using Nop.Services.Media;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Shipping;
-using Nop.Services.Shipping.Tracking;
 using Nop.Services.Tax;
 using Nop.Web.Framework.Events;
 
@@ -45,6 +42,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         private readonly ICountryService _countryService;
         private readonly ICustomerService _customerService;
         private readonly IDiscountService _discountService;
+        private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILocalizationService _localizationService;
         private readonly IManufacturerService _manufacturerService;
         private readonly IMeasureService _measureService;
@@ -76,6 +74,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             ICountryService countryService,
             ICustomerService customerService,
             IDiscountService discountService,
+            IGenericAttributeService genericAttributeService,
             ILocalizationService localizationService,
             IManufacturerService manufacturerService,
             IMeasureService measureService,
@@ -103,6 +102,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             _countryService = countryService;
             _customerService = customerService;
             _discountService = discountService;
+            _genericAttributeService = genericAttributeService;
             _localizationService = localizationService;
             _manufacturerService = manufacturerService;
             _measureService = measureService;
@@ -337,7 +337,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             var items = await _orderService.GetOrderItemsAsync(order.Id);
             var appliedDiscounts = await _discountService.GetAllDiscountUsageHistoryAsync(orderId: order.Id);
 
-            var paymentMethodName = await _paymentPluginManager.LoadPluginBySystemNameAsync(order.PaymentMethodSystemName) is IPaymentMethod plugin
+            var paymentMethodName = await _paymentPluginManager.LoadPluginBySystemNameAsync(order.PaymentMethodSystemName) is { } plugin
                 ? await _localizationService.GetLocalizedFriendlyNameAsync(plugin, order.CustomerLanguageId)
                 : order.PaymentMethodSystemName;
 
@@ -374,15 +374,13 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             property.TotalPrice = (float)order.OrderTotal;
             property.TotalTax = (float)order.OrderTax;
 
-            if ((await _shipmentService.GetShipmentsByOrderIdAsync(order.Id)).LastOrDefault() is Shipment shipment &&
-                await _shipmentService.GetShipmentTrackerAsync(shipment) is IShipmentTracker shipmentTracker)
-            {
+            if ((await _shipmentService.GetShipmentsByOrderIdAsync(order.Id)).LastOrDefault() is { } shipment &&
+                await _shipmentService.GetShipmentTrackerAsync(shipment) is { } shipmentTracker)
                 property.Tracking = new TrackingItem
                 {
                     Code = shipment.TrackingNumber,
-                    CourierURL = await shipmentTracker.GetUrlAsync(shipment.TrackingNumber, shipment)
+                    CourierURL = await shipmentTracker.GetUrlAsync(shipment.TrackingNumber)
                 };
-            }
         }
 
         private async Task<OrderProductItem> OrderItemToProductItemAsync(OrderItem orderItem)
@@ -398,7 +396,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             var manufacturer = await _manufacturerService.GetManufacturerByIdAsync(productManufacturer?.ManufacturerId ?? 0);
             var productsTags = await _productTagService.GetAllProductTagsByProductIdAsync(product.Id);
 
-            var weight = await _measureService.GetMeasureWeightBySystemKeywordAsync("grams") is MeasureWeight measureWeight
+            var weight = await _measureService.GetMeasureWeightBySystemKeywordAsync("grams") is { } measureWeight
                 ? await _measureService.ConvertFromPrimaryMeasureWeightAsync(orderItem.ItemWeight ?? 0, measureWeight)
                 : 0;
 
@@ -525,19 +523,38 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// <summary>
         /// Send "order canceled" or "order fulfilled" events
         /// </summary>
-        /// <param name="eventMessage">Order status changed event</param>
-        public async Task SendOrderStatusChangedEventAsync(OrderStatusChangedEvent eventMessage)
+        /// <param name="order">The order</param>
+        public async Task SendOrderStatusChangedEventAsync(Order order)
         {
-            var order = eventMessage.Order;
+            switch (order.OrderStatus)
+            {
+                case OrderStatus.Cancelled:
+                {
+                    var sent = await _genericAttributeService.GetAttributeAsync<bool>(order, OmnisendDefaults.OrderCanceledAttribute);
 
-            if (eventMessage.PreviousOrderStatus == order.OrderStatus)
-                return;
+                    if (sent)
+                        return;
 
-            if (order.OrderStatus == OrderStatus.Cancelled)
-                await SendEventAsync(await CreateOrderCanceledEventAsync(eventMessage.Order));
+                    await SendEventAsync(await CreateOrderCanceledEventAsync(order));
 
-            if (order.OrderStatus == OrderStatus.Complete)
-                await SendEventAsync(await CreateOrderFulfilledEventAsync(eventMessage.Order));
+                    await _genericAttributeService.SaveAttributeAsync(order, OmnisendDefaults.OrderCanceledAttribute, true);
+
+                    break;
+                }
+                case OrderStatus.Complete:
+                {
+                    var sent = await _genericAttributeService.GetAttributeAsync<bool>(order, OmnisendDefaults.OrderFulfilledAttribute);
+
+                    if (sent)
+                        return;
+
+                    await SendEventAsync(await CreateOrderFulfilledEventAsync(order));
+
+                    await _genericAttributeService.SaveAttributeAsync(order, OmnisendDefaults.OrderFulfilledAttribute, true);
+
+                    break;
+                }
+            }
         }
 
         /// <summary>
@@ -546,7 +563,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// <param name="eventMessage">Page rendering event</param>
         public async Task SendStartedCheckoutEventAsync(PageRenderingEvent eventMessage)
         {
-            var routeName = eventMessage.GetRouteName();
+            var routeName = eventMessage.GetRouteName() ?? string.Empty;
             if (!routeName.Equals("CheckoutOnePage", StringComparison.InvariantCultureIgnoreCase) &&
                 !routeName.Equals("CheckoutBillingAddress", StringComparison.InvariantCultureIgnoreCase))
                 return;

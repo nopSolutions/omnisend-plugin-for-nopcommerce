@@ -30,7 +30,8 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         IConsumer<OrderPaidEvent>,
         IConsumer<OrderPlacedEvent>,
         IConsumer<OrderRefundedEvent>,
-        IConsumer<OrderStatusChangedEvent>,
+        IConsumer<OrderCancelledEvent>,
+        IConsumer<EntityUpdatedEvent<Order>>,
         IConsumer<OrderVoidedEvent>,
         IConsumer<PageRenderingEvent>
     {
@@ -192,10 +193,19 @@ namespace Nop.Plugin.Misc.Omnisend.Infrastructure
         /// </summary>
         /// <param name="eventMessage">Event</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public async Task HandleEventAsync(OrderStatusChangedEvent eventMessage)
+        public async Task HandleEventAsync(OrderCancelledEvent eventMessage)
         {
-            await _omnisendEventsService.SendOrderStatusChangedEventAsync(eventMessage);
-            //await _omnisendService.UpdateOrderAsync(eventMessage.Order);
+            await _omnisendEventsService.SendOrderStatusChangedEventAsync(eventMessage.Order);
+        }
+
+        /// <summary>
+        /// Handle event
+        /// </summary>
+        /// <param name="eventMessage">Event</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public async Task HandleEventAsync(EntityUpdatedEvent<Order> eventMessage)
+        {
+            await _omnisendEventsService.SendOrderStatusChangedEventAsync(eventMessage.Entity);
         }
 
         /// <summary>

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Messages;
@@ -13,6 +14,7 @@ using Nop.Core.Domain.Orders;
 using Nop.Data;
 using Nop.Plugin.Misc.Omnisend.DTO;
 using Nop.Services.Catalog;
+using Nop.Services.Common;
 using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
@@ -31,12 +33,14 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         private readonly ICategoryService _categoryService;
         private readonly ICountryService _countryService;
         private readonly ICustomerService _customerService;
+        private readonly IGenericAttributeService _genericAttributeService;
         private readonly IOrderService _orderService;
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly IProductService _productService;
         private readonly IRepository<Country> _countryRepository;
         private readonly IRepository<Customer> _customerRepository;
+        private readonly IRepository<GenericAttribute> _genericAttributeRepository;
         private readonly IRepository<NewsLetterSubscription> _newsLetterSubscriptionRepository;
         private readonly IRepository<StateProvince> _stateProvinceRepository;
         private readonly ISettingService _settingService;
@@ -58,12 +62,14 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         public OmnisendService(ICategoryService categoryService,
             ICountryService countryService,
             ICustomerService customerService,
+            IGenericAttributeService genericAttributeService,
             IOrderService orderService,
             IOrderTotalCalculationService orderTotalCalculationService,
             IProductAttributeService productAttributeService,
             IProductService productService,
             IRepository<Country> countryRepository,
             IRepository<Customer> customerRepository,
+            IRepository<GenericAttribute> genericAttributeRepository,
             IRepository<NewsLetterSubscription> newsLetterSubscriptionRepository,
             IRepository<StateProvince> stateProvinceRepository,
             ISettingService settingService,
@@ -81,12 +87,14 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             _categoryService = categoryService;
             _countryService = countryService;
             _customerService = customerService;
+            _genericAttributeService = genericAttributeService;
             _orderService = orderService;
             _orderTotalCalculationService = orderTotalCalculationService;
             _productAttributeService = productAttributeService;
             _productService = productService;
             _countryRepository = countryRepository;
             _customerRepository = customerRepository;
+            _genericAttributeRepository = genericAttributeRepository;
             _newsLetterSubscriptionRepository = newsLetterSubscriptionRepository;
             _stateProvinceRepository = stateProvinceRepository;
             _settingService = settingService;
@@ -111,10 +119,10 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             if (customer == null)
                 return;
 
-            dto.FirstName = customer.FirstName;
-            dto.LastName = customer.LastName;
+            dto.FirstName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.FirstNameAttribute);
+            dto.LastName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.LastNameAttribute);
 
-            var country = await _countryService.GetCountryByIdAsync(customer.CountryId);
+            var country = await _countryService.GetCountryByIdAsync(await _genericAttributeService.GetAttributeAsync<int>(customer, NopCustomerDefaults.CountryIdAttribute));
 
             if (country != null)
             {
@@ -122,16 +130,16 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 dto.CountryCode = country.TwoLetterIsoCode;
             }
 
-            var state = await _stateProvinceService.GetStateProvinceByIdAsync(customer.StateProvinceId);
+            var state = await _stateProvinceService.GetStateProvinceByIdAsync(await _genericAttributeService.GetAttributeAsync<int>(customer, NopCustomerDefaults.StateProvinceIdAttribute));
 
             if (state != null)
                 dto.State = state.Name;
 
-            dto.City = customer.City;
-            dto.Address = customer.StreetAddress;
-            dto.PostalCode = customer.ZipPostalCode;
-            dto.Gender = customer.Gender?.ToLower() ?? "f";
-            dto.BirthDate = customer.DateOfBirth?.ToString("yyyy-MM-dd");
+            dto.City = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.CityAttribute);
+            dto.Address = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.StreetAddressAttribute);
+            dto.PostalCode = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.ZipPostalCodeAttribute);
+            dto.Gender = (await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.GenderAttribute))?.ToLower() ?? "f";
+            dto.BirthDate = (await _genericAttributeService.GetAttributeAsync<DateTime?>(customer, NopCustomerDefaults.DateOfBirthAttribute))?.ToString("yyyy-MM-dd");
         }
 
         private async Task<OrderDto.OrderItemDto> OrderItemToDtoAsync(OrderItem orderItem)
@@ -390,10 +398,13 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         /// </returns>
         private async Task<List<IBatchSupport>> PrepareNewsletterSubscribersAsync(int storeId,
             int pageIndex, int pageSize,
-            bool sendWelcomeMessage = false, NewsLetterSubscription subscriber = null, string inactiveStatus = "nonSubscribed")
+            bool sendWelcomeMessage = false, NewsLetterSubscription subscriber = null,
+            string inactiveStatus = "nonSubscribed")
         {
             //get contacts of newsletter subscribers
-            var subscriptions = (subscriber == null ? _newsLetterSubscriptionRepository.Table : _newsLetterSubscriptionRepository.Table.Where(nlsr => nlsr.Id.Equals(subscriber.Id)))
+            var subscriptions = (subscriber == null
+                    ? _newsLetterSubscriptionRepository.Table
+                    : _newsLetterSubscriptionRepository.Table.Where(nlsr => nlsr.Id.Equals(subscriber.Id)))
                 .Where(subscription => subscription.StoreId == storeId)
                 .OrderBy(subscription => subscription.Id)
                 .Skip(pageIndex * pageSize)
@@ -403,45 +414,72 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 join c in _customerRepository.Table on item.Email equals c.Email
                     into temp
                 from c in temp.DefaultIfEmpty()
-                where c == null || (c.Active && !c.Deleted)
+                where c == null || c.Active && !c.Deleted
                 select new { subscription = item, customer = c };
 
-            var contactsWithCountry = from item in contacts
-                join cr in _countryRepository.Table on item.customer.CountryId equals cr.Id
+            var contactsWithCountryId = from item in contacts
+                join gr in _genericAttributeRepository.Table on new
+                    {
+                        item.customer.Id, KeyGroup = nameof(Customer), Key = NopCustomerDefaults.CountryIdAttribute
+                    } equals new { Id = gr.EntityId, gr.KeyGroup, gr.Key }
+                    into temp
+                from cr in temp.DefaultIfEmpty()
+                select new { item.customer, item.subscription, countryId = int.Parse(cr.Value) };
+
+            var contactsWithCountry = from item in contactsWithCountryId
+                join cr in _countryRepository.Table on item.countryId equals cr.Id
                     into temp
                 from cr in temp.DefaultIfEmpty()
                 select new { item.customer, item.subscription, country = cr };
 
-            var contactsWithState = from item in contactsWithCountry
-                join sp in _stateProvinceRepository.Table on item.customer.StateProvinceId equals sp.Id
+            var contactsWithStateId = from item in contactsWithCountry
+                join gr in _genericAttributeRepository.Table on new
+                    {
+                        item.customer.Id,
+                        KeyGroup = nameof(Customer),
+                        Key = NopCustomerDefaults.StateProvinceIdAttribute
+                    } equals new { Id = gr.EntityId, gr.KeyGroup, gr.Key }
+                    into temp
+                from cr in temp.DefaultIfEmpty()
+                select new { item.customer, item.subscription, item.country, stateId = int.Parse(cr.Value) };
+
+            var contactsWithState = from item in contactsWithStateId
+                join sp in _stateProvinceRepository.Table on item.stateId equals sp.Id
                     into temp
                 from sp in temp.DefaultIfEmpty()
                 select new
                 {
                     item.subscription,
-                    item.customer.FirstName,
-                    item.customer.LastName,
                     CountryName = item.country.Name,
                     CountryTwoLetterIsoCode = item.country.TwoLetterIsoCode,
                     StateProvinceName = sp.Name,
-                    item.customer.City,
-                    item.customer.StreetAddress,
-                    item.customer.ZipPostalCode,
-                    item.customer.Gender,
-                    item.customer.DateOfBirth
+                    item.customer
                 };
 
-            var subscribers = (await contactsWithState.ToListAsync()).Select(item =>
+            var subscribers = await (await contactsWithState.ToListAsync()).SelectAwait(async item =>
             {
                 var dto = new CreateContactRequest(item.subscription, inactiveStatus, sendWelcomeMessage)
                 {
-                    FirstName = item.FirstName,
-                    LastName = item.LastName,
-                    City = item.City,
-                    Address = item.StreetAddress,
-                    PostalCode = item.ZipPostalCode,
-                    Gender = item.Gender?.ToLower(),
-                    BirthDate = item.DateOfBirth?.ToString("yyyy-MM-dd")
+                    FirstName =
+                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
+                            NopCustomerDefaults.FirstNameAttribute),
+                    LastName =
+                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
+                            NopCustomerDefaults.LastNameAttribute),
+                    City =
+                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
+                            NopCustomerDefaults.CityAttribute),
+                    Address =
+                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
+                            NopCustomerDefaults.StreetAddressAttribute),
+                    PostalCode =
+                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
+                            NopCustomerDefaults.ZipPostalCodeAttribute),
+                    Gender =
+                        (await _genericAttributeService.GetAttributeAsync<string>(item.customer,
+                            NopCustomerDefaults.GenderAttribute))?.ToLower(),
+                    BirthDate = (await _genericAttributeService.GetAttributeAsync<DateTime?>(item.customer,
+                        NopCustomerDefaults.DateOfBirthAttribute))?.ToString("yyyy-MM-dd")
                 };
 
                 if (!string.IsNullOrEmpty(item.CountryName))
@@ -454,7 +492,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                     dto.State = item.StateProvinceName;
 
                 return (IBatchSupport)dto;
-            }).ToList();
+            }).ToListAsync();
 
             return subscribers;
         }
