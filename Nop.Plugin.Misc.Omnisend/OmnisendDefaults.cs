@@ -103,6 +103,16 @@ namespace Nop.Plugin.Misc.Omnisend
         /// </summary>
         public static string ContactIdQueryParamName => "omnisendContactID";
 
+        /// <summary>
+        /// Gets an OrderCanceled attribute name
+        /// </summary>
+        public static string OrderCanceledAttribute => "Omnisend.OrderCanceledEvent.IsSent";
+
+        /// <summary>
+        /// Gets an OrderFulfilled attribute name
+        /// </summary>
+        public static string OrderFulfilledAttribute => "Omnisend.OrderFulfilledEvent.IsSent";
+
         #region Batch
 
         /// <summary>
