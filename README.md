@@ -3,6 +3,6 @@
 
 nopCommerce site: [https://www.nopcommerce.com](https://www.nopcommerce.com)
 
-Listing on nopCommerce marketplace: [https://www.nopcommerce.com/omnisend-plugin](https://www.nopcommerce.com/omnisend-plugin)
+Listing on nopCommerce marketplace: [[https://www.nopcommerce.com/omnisend-plugin](https://www.nopcommerce.com/en/omnisend-ecommerce-email-marketing-and-sms-platform)]([https://www.nopcommerce.com/omnisend-plugin](https://www.nopcommerce.com/en/omnisend-ecommerce-email-marketing-and-sms-platform))
 
 Omnisend site: [https://www.omnisend.com/](https://www.omnisend.com/)
