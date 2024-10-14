@@ -458,29 +458,18 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
             var subscribers = await (await contactsWithState.ToListAsync()).SelectAwait(async item =>
             {
-                var dto = new CreateContactRequest(item.subscription, inactiveStatus, sendWelcomeMessage)
+                var dto = new CreateContactRequest(item.subscription, inactiveStatus, sendWelcomeMessage);
+
+                if (item.customer != null)
                 {
-                    FirstName =
-                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
-                            NopCustomerDefaults.FirstNameAttribute),
-                    LastName =
-                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
-                            NopCustomerDefaults.LastNameAttribute),
-                    City =
-                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
-                            NopCustomerDefaults.CityAttribute),
-                    Address =
-                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
-                            NopCustomerDefaults.StreetAddressAttribute),
-                    PostalCode =
-                        await _genericAttributeService.GetAttributeAsync<string>(item.customer,
-                            NopCustomerDefaults.ZipPostalCodeAttribute),
-                    Gender =
-                        (await _genericAttributeService.GetAttributeAsync<string>(item.customer,
-                            NopCustomerDefaults.GenderAttribute))?.ToLower(),
-                    BirthDate = (await _genericAttributeService.GetAttributeAsync<DateTime?>(item.customer,
-                        NopCustomerDefaults.DateOfBirthAttribute))?.ToString("yyyy-MM-dd")
-                };
+                    dto.FirstName = await _genericAttributeService.GetAttributeAsync<string>(item.customer, NopCustomerDefaults.FirstNameAttribute);
+                    dto.LastName = await _genericAttributeService.GetAttributeAsync<string>(item.customer, NopCustomerDefaults.LastNameAttribute);
+                    dto.City = await _genericAttributeService.GetAttributeAsync<string>(item.customer, NopCustomerDefaults.CityAttribute);
+                    dto.Address = await _genericAttributeService.GetAttributeAsync<string>(item.customer, NopCustomerDefaults.StreetAddressAttribute);
+                    dto.PostalCode = await _genericAttributeService.GetAttributeAsync<string>(item.customer, NopCustomerDefaults.ZipPostalCodeAttribute);
+                    dto.Gender = (await _genericAttributeService.GetAttributeAsync<string>(item.customer, NopCustomerDefaults.GenderAttribute))?.ToLower();
+                    dto.BirthDate = (await _genericAttributeService.GetAttributeAsync<DateTime?>(item.customer, NopCustomerDefaults.DateOfBirthAttribute))?.ToString("yyyy-MM-dd");
+                }
 
                 if (!string.IsNullOrEmpty(item.CountryName))
                     dto.Country = item.CountryName;
