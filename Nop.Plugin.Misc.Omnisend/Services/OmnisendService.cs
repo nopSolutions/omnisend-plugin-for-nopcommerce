@@ -445,16 +445,18 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
             var subscribers = (contactsWithState.ToList()).Select(item =>
             {
-                var dto = new CreateContactRequest(item.subscription, inactiveStatus, sendWelcomeMessage)
+                var dto = new CreateContactRequest(item.subscription, inactiveStatus, sendWelcomeMessage);
+
+                if (item.customer != null)
                 {
-                    FirstName = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.FirstNameAttribute),
-                    LastName = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.LastNameAttribute),
-                    City = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.CityAttribute),
-                    Address = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.StreetAddressAttribute),
-                    PostalCode = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.ZipPostalCodeAttribute),
-                    Gender = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.GenderAttribute)?.ToLower(),
-                    BirthDate = _genericAttributeService.GetAttribute<DateTime?>(item.customer, NopCustomerDefaults.DateOfBirthAttribute)?.ToString("yyyy-MM-dd")
-                };
+                    dto.FirstName = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.FirstNameAttribute);
+                    dto.LastName = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.LastNameAttribute);
+                    dto.City = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.CityAttribute);
+                    dto.Address = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.StreetAddressAttribute);
+                    dto.PostalCode = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.ZipPostalCodeAttribute);
+                    dto.Gender = _genericAttributeService.GetAttribute<string>(item.customer, NopCustomerDefaults.GenderAttribute)?.ToLower();
+                    dto.BirthDate = _genericAttributeService.GetAttribute<DateTime?>(item.customer, NopCustomerDefaults.DateOfBirthAttribute)?.ToString("yyyy-MM-dd");
+                }
 
                 if (!string.IsNullOrEmpty(item.CountryName))
                     dto.Country = item.CountryName;
