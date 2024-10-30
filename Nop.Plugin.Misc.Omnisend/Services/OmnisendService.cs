@@ -113,6 +113,67 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
         #region Utilities
 
+        private List<BatchResponse> GetBatchesInfo(IList<string> batchesIds)
+        {
+            if (!batchesIds.Any())
+                return new List<BatchResponse>();
+
+            var batches = batchesIds.Select(GetBatchInfo)
+                .ToList();
+
+            batches = batches.Where(p => p != null).ToList();
+
+            if (batches.Any())
+                return batches;
+
+            _omnisendSettings.BatchesIds.Clear();
+            _settingService.SaveSetting(_omnisendSettings);
+
+            return batches;
+        }
+
+        private string SendProductBatch(IEnumerable<Product> products, HttpMethod batchMethod)
+        {
+            var data = JsonConvert.SerializeObject(new BatchRequest
+            {
+                Method = batchMethod.Method.ToUpper(),
+                Endpoint = OmnisendDefaults.ProductsEndpoint,
+                Items = products.Select(product => ProductToDto(product) as IBatchSupport).ToList()
+            });
+
+            return SendBatch(data);
+        }
+
+        private void SendCategoryBatch(IEnumerable<Category> categories, HttpMethod batchMethod)
+        {
+            var data = JsonConvert.SerializeObject(new BatchRequest
+            {
+                Method = batchMethod.Method.ToUpper(),
+                Endpoint = OmnisendDefaults.CategoriesEndpoint,
+                Items = categories.Select(category => CategoryToDto(category) as IBatchSupport).ToList()
+            });
+
+            SendBatch(data);
+        }
+
+        private string SendBatch(string data)
+        {
+            var rez = _omnisendHttpClient.PerformRequest(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
+
+            if (rez == null)
+                return string.Empty;
+
+            var bathId = JsonConvert.DeserializeAnonymousType(rez, new { batchID = "" })?.batchID;
+
+            if (bathId == null) 
+                return string.Empty;
+
+            _omnisendSettings.BatchesIds.Add(bathId);
+            _settingService.SaveSetting(_omnisendSettings);
+
+            return bathId;
+        }
+
         private void FillCustomerInfo(BaseContactInfoDto dto, Customer customer)
         {
             if (customer == null)
@@ -535,21 +596,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
                 while (page < categories.TotalPages)
                 {
-                    var data = JsonConvert.SerializeObject(new BatchRequest
-                    {
-                        Endpoint = OmnisendDefaults.CategoriesEndpoint,
-                        Items = categories.Select(category => CategoryToDto(category) as IBatchSupport).ToList()
-                    });
-
-                    var rez = _omnisendHttpClient.PerformRequest(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
-
-                    var bathId = JsonConvert.DeserializeAnonymousType(rez, new { batchID = "" })?.batchID;
-
-                    if (bathId != null)
-                    {
-                        _omnisendSettings.BatchesIds.Add(bathId);
-                        _settingService.SaveSetting(_omnisendSettings);
-                    }
+                    SendCategoryBatch(categories, HttpMethod.Post);
 
                     page++;
 
@@ -557,11 +604,23 @@ namespace Nop.Plugin.Misc.Omnisend.Services
                 }
             }
             else
-                foreach (var category in categories)
-                {
-                    var data = JsonConvert.SerializeObject(CategoryToDto(category));
+                foreach (var data in categories.Select(category => JsonConvert.SerializeObject(CategoryToDto(category))))
                     _omnisendHttpClient.PerformRequest(OmnisendDefaults.CategoriesApiUrl, data, HttpMethod.Post);
-                }
+        }
+
+        /// <summary>
+        /// Synchronize categories
+        /// </summary>
+        /// <param name="categoriesId">Categories identifiers list to update</param>
+        public void UpdateCategories(int[] categoriesId)
+        {
+            var categories = _categoryService.GetCategoriesByIds(categoriesId);
+
+            foreach (var category in categories)
+            {
+                var data = JsonConvert.SerializeObject(CategoryToDto(category));
+                _omnisendHttpClient.PerformRequest(OmnisendDefaults.CategoriesApiUrl +$"/{category.Id}", data, HttpMethod.Put);
+            }
         }
 
         /// <summary>
@@ -577,21 +636,7 @@ namespace Nop.Plugin.Misc.Omnisend.Services
 
                 while (page < products.TotalPages)
                 {
-                    var data = JsonConvert.SerializeObject(new BatchRequest
-                    {
-                        Endpoint = OmnisendDefaults.ProductsEndpoint,
-                        Items = products.Select(product => ProductToDto(product) as IBatchSupport).ToList()
-                    });
-
-                    var rez = _omnisendHttpClient.PerformRequest(OmnisendDefaults.BatchesApiUrl, data, HttpMethod.Post);
-
-                    var bathId = JsonConvert.DeserializeAnonymousType(rez, new { batchID = "" })?.batchID;
-
-                    if (bathId != null)
-                    {
-                        _omnisendSettings.BatchesIds.Add(bathId);
-                        _settingService.SaveSetting(_omnisendSettings);
-                    }
+                    SendProductBatch(products, HttpMethod.Post);
 
                     page++;
 
@@ -601,6 +646,17 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             else
                 foreach (var product in products)
                     AddNewProduct(product);
+        }
+
+        /// <summary>
+        /// Updates products
+        /// </summary>
+        /// /// <param name="productsId">Products identifiers list to update</param>
+        public string UpdateProducts(int[] productsId)
+        {
+            var products = _productService.GetProductsByIds(productsId);
+            
+            return SendProductBatch(products, HttpMethod.Put);
         }
 
         /// <summary>
@@ -705,6 +761,114 @@ namespace Nop.Plugin.Misc.Omnisend.Services
             var result = _omnisendHttpClient.PerformRequest<BatchResponse>(url, httpMethod: HttpMethod.Get);
 
             return result;
+        }
+
+        /// <summary>
+        /// Process the batch response
+        /// </summary>
+        /// <param name="batchResponse">Batch response to process</param>
+        /// <returns>New batch identifier if it placed during process the current one</returns>
+        public string ProcessBatch(BatchResponse batchResponse)
+        {
+            var (delete, batchId) = process();
+            
+            if (!delete)
+                return batchId;
+
+            _omnisendSettings.BatchesIds.Remove(batchResponse.BatchId);
+            _settingService.SaveSetting(_omnisendSettings);
+
+            return batchId;
+
+            (bool, string) process()
+            {
+                var newBatchId = string.Empty;
+
+                if (!batchResponse.Status.Equals(OmnisendDefaults.BatchFinishedStatus, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    batchResponse.ErrorsCount = 0;
+
+                    return (false, newBatchId);
+                }
+
+                var endpoint = batchResponse.Endpoint;
+
+                if (!endpoint.Equals(OmnisendDefaults.ProductsEndpoint, StringComparison.InvariantCultureIgnoreCase) &&
+                    !endpoint.Equals(OmnisendDefaults.CategoriesEndpoint, StringComparison.InvariantCultureIgnoreCase))
+                    return (true, newBatchId);
+
+                if (batchResponse.ErrorsCount == 0)
+                    return (true, newBatchId);
+
+                if (batchResponse.Method.Equals("PUT", StringComparison.InvariantCultureIgnoreCase))
+                    return (false, newBatchId);
+
+                var url = OmnisendDefaults.BatchesApiUrl + $"/{batchResponse.BatchId}/items";
+
+                var result = _omnisendHttpClient.PerformRequest<BatchItemsResponse>(url, httpMethod: HttpMethod.Get);
+
+                var updateItems = new List<int>();
+
+                foreach (var resultError in result.Errors)
+                {
+                    if (resultError.ResponseCode != 400)
+                        continue;
+
+                    var needChangeCount = false;
+
+                    if (endpoint.Equals(OmnisendDefaults.ProductsEndpoint, StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        var productDto = JsonConvert.DeserializeObject<ProductDto>(resultError.Request?.ToString() ?? string.Empty);
+
+                        updateItems.Add(int.Parse(productDto.ProductId));
+                        needChangeCount = true;
+                    }
+
+                    if (endpoint.Equals(OmnisendDefaults.CategoriesEndpoint, StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        var categoryDto = JsonConvert.DeserializeObject<CategoryDto>(resultError.Request?.ToString() ?? string.Empty);
+
+                        updateItems.Add(int.Parse(categoryDto.CategoryId));
+                        needChangeCount = true;
+                    }
+
+                    if (!needChangeCount)
+                        continue;
+
+                    batchResponse.TotalCount--;
+                    batchResponse.ErrorsCount--;
+                }
+
+                if (!updateItems.Any())
+                    return (false, newBatchId);
+
+                if (endpoint.Equals(OmnisendDefaults.ProductsEndpoint, StringComparison.InvariantCultureIgnoreCase))
+                    newBatchId = UpdateProducts(updateItems.ToArray());
+
+                if (endpoint.Equals(OmnisendDefaults.CategoriesEndpoint, StringComparison.InvariantCultureIgnoreCase))
+                    UpdateCategories(updateItems.ToArray());
+
+                return (batchResponse.ErrorsCount == 0, newBatchId);
+            }
+        }
+
+        /// <summary>
+        /// Gets the stored batches
+        /// </summary>
+        /// <returns>Stored batches</returns>
+        public List<BatchResponse> GetStoredBatches()
+        {
+            return GetBatchesInfo(_omnisendSettings.BatchesIds);
+        }
+
+        /// <summary>
+        /// Gets the additional batches
+        /// </summary>
+        /// <param name="additionalBatches">Additional batches identifiers</param>
+        /// <returns>Additional batches</returns>
+        public IEnumerable<BatchResponse> GetAdditionalBatches(List<string> additionalBatches)
+        {
+            return GetBatchesInfo(additionalBatches);
         }
 
         #endregion
@@ -991,7 +1155,6 @@ namespace Nop.Plugin.Misc.Omnisend.Services
         }
 
         #endregion
-
 
         #endregion
     }

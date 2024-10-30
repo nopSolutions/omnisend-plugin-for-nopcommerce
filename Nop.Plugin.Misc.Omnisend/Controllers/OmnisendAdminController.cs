@@ -49,40 +49,29 @@ namespace Nop.Plugin.Misc.Omnisend.Controllers
 
         private void FillBatches(ConfigurationModel model)
         {
-            if (!_omnisendSettings.BatchesIds.Any())
-                return;
-
-            var batches = _omnisendSettings.BatchesIds.Select(_omnisendService.GetBatchInfo)
-                .ToList();
-
-            batches = batches.Where(p => p != null).ToList();
-
-            if (!batches.Any())
-            {
-                _omnisendSettings.BatchesIds.Clear();
-                _settingService.SaveSetting(_omnisendSettings);
-            }
-
-            model.Batches = batches;
+            var batches = _omnisendService.GetStoredBatches();
 
             bool needBlock(BatchResponse response, string endpoint)
             {
                 return response.Endpoint.Equals(endpoint, StringComparison.InvariantCultureIgnoreCase) &&
-                       !response.Status.Equals(OmnisendDefaults.BatchFinishedStatus,
-                           StringComparison.InvariantCultureIgnoreCase);
+                    !response.Status.Equals(OmnisendDefaults.BatchFinishedStatus,
+                        StringComparison.InvariantCultureIgnoreCase);
             }
 
-            model.BlockSyncContacts = batches.Any(p => needBlock(p, OmnisendDefaults.ContactsEndpoint));
-            model.BlockSyncOrders = batches.Any(p => needBlock(p, OmnisendDefaults.OrdersEndpoint));
-            model.BlockSyncProducts = batches.Any(p => needBlock(p, OmnisendDefaults.ProductsEndpoint)) || batches.Any(p => needBlock(p, OmnisendDefaults.CategoriesEndpoint));
+            var additionalBatches = batches
+                .Where(p => p.Status.Equals(OmnisendDefaults.BatchFinishedStatus,
+                    StringComparison.InvariantCultureIgnoreCase))
+                .Select(batchResponse => _omnisendService.ProcessBatch(batchResponse))
+                .Where(newBatchId => !string.IsNullOrEmpty(newBatchId)).ToList();
 
-            foreach (var batchResponse in batches.Where(p =>
-                         p.Status.Equals(OmnisendDefaults.BatchFinishedStatus,
-                             StringComparison.InvariantCultureIgnoreCase)))
-            {
-                _omnisendSettings.BatchesIds.Remove(batchResponse.BatchId);
-                _settingService.SaveSetting(_omnisendSettings);
-            }
+            batches.AddRange(_omnisendService.GetAdditionalBatches(additionalBatches));
+
+            model.Batches = batches.Where(b => b.TotalCount > 0).ToList();
+
+            model.BlockSyncContacts = model.Batches.Any(p => needBlock(p, OmnisendDefaults.ContactsEndpoint));
+            model.BlockSyncOrders = model.Batches.Any(p => needBlock(p, OmnisendDefaults.OrdersEndpoint));
+            model.BlockSyncProducts = model.Batches.Any(p => needBlock(p, OmnisendDefaults.ProductsEndpoint)) ||
+                batches.Any(p => needBlock(p, OmnisendDefaults.CategoriesEndpoint));
         }
 
         #endregion
